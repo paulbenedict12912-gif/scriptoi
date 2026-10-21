@@ -1,4 +1,4 @@
--- Compact & Mobile-Optimized LinoriaLib
+-- FULLY FIXED MOBILE SCRIPT (Compact & Touch Enabled)
 local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
 
 local Library      = loadstring(game:HttpGet(repo .. 'Library.lua'))()
@@ -6,28 +6,42 @@ local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))
 local SaveManager  = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 
 local UserInputService = game:GetService('UserInputService')
-local isMobile = UserInputService.TouchEnabled
 
--- 1. Make the base window smaller
+-- Create Window (Forcing a very small size)
 local Window = Library:CreateWindow({
     Title        = 'Menu',
     Center       = true,
     AutoShow     = true,
     TabPadding   = 4, 
     MenuFadeTime = 0.1,
-    Size         = UDim2.fromOffset(480, 320) -- Smaller, compact base size
+    Size         = UDim2.fromOffset(460, 280) -- Forces a smaller base size
 })
 
--- 2. Fix Touch & Clicking issues: Apply a UI Scale so it fits
-if isMobile and Library.MainFrame then
-    -- Scale down the whole menu to 75% so it doesn't take up the whole screen
-    local scale = Instance.new('UIScale')
-    scale.Scale = 0.75
-    scale.Parent = Library.MainFrame
-    
-    -- Fix dragging: Only allow dragging from the very top title bar.
-    -- This prevents the menu from swallowing your clicks when you try to press buttons.
-    Library.TitleBar.Active = true
+-- ─────────────────────────────────────────────────────────────
+-- 🛠️ MOBILE TOUCH FIX (Crucial for Buttons & Color Pickers)
+-- ─────────────────────────────────────────────────────────────
+if UserInputService.TouchEnabled then
+    task.spawn(function()
+        task.wait(0.2) -- Wait for UI to load
+        if Library.MainFrame then
+            -- 1. Force UI to scale down to 75% so it fits better
+            local uiScale = Instance.new('UIScale')
+            uiScale.Scale = 0.75
+            uiScale.Parent = Library.MainFrame
+            
+            -- 2. Fix Touches: The main frame swallows your taps! 
+            -- We disable it, but keep the top title bar active so you can still drag it.
+            Library.MainFrame.Active = false
+            Library.TitleBar.Active = true
+            
+            -- 3. Fix Color Picker & Dropdowns: Force all buttons to be Active
+            for _, obj in pairs(Library.ScreenGui:GetDescendants()) do
+                if obj:IsA("TextButton") or obj:IsA("ImageButton") then
+                    obj.Active = true
+                end
+            end
+        end
+    end)
 end
 
 local Tabs = {
@@ -35,25 +49,22 @@ local Tabs = {
     Settings = Window:AddTab('Settings'),
 }
 
--- 3. Split into Left and Right to keep the UI short (no scrolling needed)
-local LeftGroup  = Tabs.Main:AddLeftGroupbox('Toggles & Buttons')
-local RightGroup = Tabs.Main:AddRightGroupbox('Values & Settings')
+-- Split into Left and Right to keep it short (No long scrolling)
+local LeftGroup  = Tabs.Main:AddLeftGroupbox('Features')
+local RightGroup = Tabs.Main:AddRightGroupbox('Values')
 
 -- === LEFT SIDE ===
 LeftGroup:AddToggle('MyToggle', {
     Text    = 'Enable feature',
     Default = true,
-    Callback = function(v) print('[cb] Toggle:', v) end
 })
 
-local Btn = LeftGroup:AddButton({
+LeftGroup:AddButton({
     Text = 'Click me',
     Func = function() print('Button clicked!') end,
-})
-Btn:AddButton({
+}):AddButton({
     Text = 'Sub button',
     Func = function() print('Sub clicked!') end,
-    DoubleClick = true
 })
 
 LeftGroup:AddLabel('Keybind'):AddKeyPicker('MyKey', {
@@ -66,21 +77,18 @@ LeftGroup:AddLabel('Keybind'):AddKeyPicker('MyKey', {
 RightGroup:AddSlider('MySlider', {
     Text = 'Slider value',
     Default = 50, Min = 0, Max = 100, Rounding = 0,
-    Callback = function(v) print('[cb] Slider:', v) end
 })
 
 RightGroup:AddDropdown('MyDropdown', {
     Values  = {'Option A', 'Option B', 'Option C'},
     Default = 1,
     Text    = 'Choose option',
-    Callback = function(v) print('[cb] Dropdown:', v) end
 })
 
 RightGroup:AddInput('MyInput', {
     Default     = '',
     Text        = 'Textbox',
     Placeholder = 'Type here...',
-    Callback    = function(v) print('[cb] Input:', v) end
 })
 
 RightGroup:AddLabel('Color'):AddColorPicker('MyColor', {
