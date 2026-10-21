@@ -1,7 +1,7 @@
 
--- Mobile Block Selector UI
+-- Mobile Block Selector UI + Fly
 -- Place in StarterPlayer > StarterPlayerScripts as a LocalScript
--- Intended for your own Roblox Studio experience.
+-- For your own Roblox Studio experience.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -60,7 +60,7 @@ local function makeButton(parent, name, text, position, size)
     return button
 end
 
--- Floating UI toggle
+-- Floating show/hide button
 local floating = make("TextButton", {
     Name = "FloatingButton",
     Position = UDim2.new(0, 12, 0.45, 0),
@@ -78,8 +78,8 @@ round(floating, 22)
 -- Main window
 local window = make("Frame", {
     Name = "MainWindow",
-    Size = UDim2.fromOffset(260, 260),
-    Position = UDim2.new(0.5, -130, 0.5, -130),
+    Size = UDim2.fromOffset(260, 290),
+    Position = UDim2.new(0.5, -130, 0.5, -145),
     BackgroundColor3 = DARK,
     BorderSizePixel = 0,
     Active = true,
@@ -108,16 +108,15 @@ make("TextLabel", {
     TextXAlignment = Enum.TextXAlignment.Left
 }, header)
 
--- Scrolling container
+-- Scrollable code textbox
 local scroll = make("ScrollingFrame", {
     Name = "CodeScroll",
     Position = UDim2.fromOffset(8, 40),
-    Size = UDim2.new(1, -16, 1, -91),
+    Size = UDim2.new(1, -16, 1, -137),
     BackgroundColor3 = Color3.fromRGB(16, 18, 23),
     BorderSizePixel = 0,
     ScrollBarThickness = 6,
     ScrollingDirection = Enum.ScrollingDirection.XY,
-    AutomaticCanvasSize = Enum.AutomaticSize.None,
     CanvasSize = UDim2.fromOffset(0, 0),
     ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
     Active = true,
@@ -129,7 +128,6 @@ local codeBox = make("TextBox", {
     Name = "ScriptTextbox",
     Position = UDim2.fromOffset(5, 5),
     Size = UDim2.new(1, -10, 0, 220),
-    AutomaticSize = Enum.AutomaticSize.None,
     BackgroundTransparency = 1,
     BorderSizePixel = 0,
     Text = "-- Tap Start, then select a block.",
@@ -156,31 +154,67 @@ local function updateCanvas()
         longest = math.max(longest, #line)
     end
 
-    local lineHeight = 15
-    local wantedHeight = math.max(scroll.AbsoluteSize.Y - 10, lines * lineHeight + 12)
-    local wantedWidth = math.max(scroll.AbsoluteSize.X - 10, longest * 7 + 15)
+    local wantedHeight = math.max(
+        scroll.AbsoluteSize.Y - 10,
+        lines * 15 + 12
+    )
+    local wantedWidth = math.max(
+        scroll.AbsoluteSize.X - 10,
+        longest * 7 + 15
+    )
 
     codeBox.Size = UDim2.fromOffset(wantedWidth, wantedHeight)
-    scroll.CanvasSize = UDim2.fromOffset(wantedWidth + 10, wantedHeight + 10)
+    scroll.CanvasSize = UDim2.fromOffset(
+        wantedWidth + 10,
+        wantedHeight + 10
+    )
 end
 
 codeBox:GetPropertyChangedSignal("Text"):Connect(updateCanvas)
 scroll:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateCanvas)
 
--- Buttons
+-- Fly row: button and speed textbox side by side
+local flyButton = makeButton(
+    window,
+    "FlyButton",
+    "Fly",
+    UDim2.new(0, 8, 1, -87),
+    UDim2.fromOffset(78, 30)
+)
+
+local speedBox = make("TextBox", {
+    Name = "FlySpeed",
+    Position = UDim2.new(0, 92, 1, -87),
+    Size = UDim2.fromOffset(78, 30),
+    BackgroundColor3 = Color3.fromRGB(17, 19, 24),
+    BorderSizePixel = 0,
+    Text = "50",
+    PlaceholderText = "Speed",
+    TextColor3 = WHITE,
+    PlaceholderColor3 = Color3.fromRGB(125, 130, 145),
+    TextSize = 11,
+    Font = Enum.Font.Gotham,
+    ClearTextOnFocus = false
+}, window)
+round(speedBox, 5)
+
+-- Bottom row
 local startButton = makeButton(
     window, "StartButton", "Start",
-    UDim2.new(0, 8, 1, -43), UDim2.new(0.3333, -8, 0, 33)
+    UDim2.new(0, 8, 1, -45),
+    UDim2.new(0.3333, -8, 0, 33)
 )
 
 local locanButton = makeButton(
     window, "LocanButton", "Locan",
-    UDim2.new(0.3333, 1, 1, -43), UDim2.new(0.3333, -8, 0, 33)
+    UDim2.new(0.3333, 1, 1, -45),
+    UDim2.new(0.3333, -8, 0, 33)
 )
 
 local copyButton = makeButton(
     window, "CopyButton", "Copy",
-    UDim2.new(0.6666, 2, 1, -43), UDim2.new(0.3333, -10, 0, 33)
+    UDim2.new(0.6666, 2, 1, -45),
+    UDim2.new(0.3333, -10, 0, 33)
 )
 
 local function setToggle(button, enabled)
@@ -191,7 +225,7 @@ floating.Activated:Connect(function()
     window.Visible = not window.Visible
 end)
 
--- Drag only from header. Do not drag while editing the textbox.
+-- Drag window from header only
 local dragging = false
 local dragInput
 local dragStart
@@ -200,7 +234,6 @@ local windowStart
 header.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
-
         dragging = true
         dragInput = input
         dragStart = input.Position
@@ -209,11 +242,10 @@ header.InputBegan:Connect(function(input)
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-    if not dragging then return end
-
-    if input.UserInputType == Enum.UserInputType.MouseMovement
-        or input.UserInputType == Enum.UserInputType.Touch then
-
+    if dragging and (
+        input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch
+    ) then
         local delta = input.Position - dragStart
 
         window.Position = UDim2.new(
@@ -232,12 +264,12 @@ UserInputService.InputEnded:Connect(function(input)
     end
 end)
 
--- Selection state
+-- Target selection
 local selecting = false
-local selectedPart = nil
-local selectedTarget = nil
-local highlight = nil
-local inputConnection = nil
+local selectedPart
+local selectedTarget
+local highlight
+local inputConnection
 
 local function clearHighlight()
     if highlight then
@@ -247,7 +279,6 @@ local function clearHighlight()
 end
 
 local function getTargetFromPart(part)
-    -- Preserve a model as the target if the hit part belongs to one.
     local model = part:FindFirstAncestorOfClass("Model")
 
     if model and model ~= player.Character then
@@ -255,6 +286,19 @@ local function getTargetFromPart(part)
     end
 
     return part
+end
+
+local function findTargetPart(target)
+    if not target then return nil end
+
+    if target:IsA("BasePart") then
+        return target
+    elseif target:IsA("Model") then
+        return target.PrimaryPart
+            or target:FindFirstChildWhichIsA("BasePart", true)
+    end
+
+    return nil
 end
 
 local function makeHighlight(target)
@@ -271,27 +315,10 @@ local function makeHighlight(target)
     highlight.Parent = gui
 end
 
-local function findTargetPart(target)
-    if target:IsA("BasePart") then
-        return target
-    end
-
-    if target:IsA("Model") then
-        if target.PrimaryPart then
-            return target.PrimaryPart
-        end
-
-        return target:FindFirstChildWhichIsA("BasePart", true)
-    end
-
-    return nil
-end
-
 local function selectAtScreenPosition(screenPosition)
     local camera = workspace.CurrentCamera
     if not camera then return end
 
-    -- Convert screen coordinates to viewport coordinates.
     local inset = GuiService:GetGuiInset()
     local viewportPosition = Vector2.new(
         screenPosition.X - inset.X,
@@ -319,18 +346,15 @@ local function selectAtScreenPosition(screenPosition)
         params
     )
 
-    if not result then return end
+    if not result or not result.Instance:IsA("BasePart") then
+        return
+    end
 
-    local part = result.Instance
-    if not part:IsA("BasePart") then return end
-
-    selectedPart = part
-    selectedTarget = getTargetFromPart(part)
-
+    selectedPart = result.Instance
+    selectedTarget = getTargetFromPart(selectedPart)
     makeHighlight(selectedTarget)
 
-    -- Do NOT modify the textbox here.
-    -- Selection should never overwrite user text.
+    -- Selection does not modify the textbox.
 end
 
 startButton.Activated:Connect(function()
@@ -342,9 +366,7 @@ startButton.Activated:Connect(function()
         inputConnection = nil
     end
 
-    if not selecting then
-        return
-    end
+    if not selecting then return end
 
     inputConnection = UserInputService.InputBegan:Connect(function(input, processed)
         if not selecting or processed then return end
@@ -354,37 +376,30 @@ startButton.Activated:Connect(function()
             return
         end
 
-        -- Don't select through interactions with this UI.
         if window.Visible then
-            local pos = input.Position
-            local absPos = window.AbsolutePosition
-            local absSize = window.AbsoluteSize
+            local p = input.Position
+            local pos = window.AbsolutePosition
+            local size = window.AbsoluteSize
 
-            local insideWindow =
-                pos.X >= absPos.X and pos.X <= absPos.X + absSize.X
-                and pos.Y >= absPos.Y and pos.Y <= absPos.Y + absSize.Y
-
-            if insideWindow then return end
+            if p.X >= pos.X and p.X <= pos.X + size.X
+                and p.Y >= pos.Y and p.Y <= pos.Y + size.Y then
+                return
+            end
         end
 
         selectAtScreenPosition(input.Position)
     end)
 end)
 
--- Locan generates code only when explicitly pressed.
+-- Generate teleport example for selected target
 local function generateCode(target)
-    local targetPart = findTargetPart(target)
-    if not targetPart then
-        return "-- The selected target has no BasePart."
+    local part = findTargetPart(target)
+    if not part then
+        return "-- Selected target has no BasePart."
     end
-
-    local fullName = target:GetFullName()
-    local partName = targetPart.Name
 
     return string.format([[
 -- Generated example for your own Roblox Studio experience
--- Selected target: %s
-
 local targetName = %q
 local partName = %q
 
@@ -406,11 +421,10 @@ if target then
             or player.CharacterAdded:Wait()
         local root = character:WaitForChild("HumanoidRootPart")
 
-        -- Example: teleport beside the selected target.
         root.CFrame = part.CFrame * CFrame.new(0, 3, 0)
     end
 end
-]], fullName, target.Name, partName)
+]], target.Name, part.Name)
 end
 
 locanButton.Activated:Connect(function()
@@ -421,46 +435,144 @@ locanButton.Activated:Connect(function()
 
     if not selectedTarget or not selectedTarget.Parent then
         codeBox.Text = "-- No valid target selected.\n-- Press Start, then tap a block or coin."
-        updateCanvas()
-        return
+    else
+        codeBox.Text = generateCode(selectedTarget)
     end
 
-    -- This is the only place selection-generated code changes the textbox.
-    codeBox.Text = generateCode(selectedTarget)
     scroll.CanvasPosition = Vector2.new(0, 0)
     updateCanvas()
 end)
 
--- Clipboard API is not provided by standard Roblox LocalScripts.
+-- Copy button: Roblox LocalScripts have no standard clipboard API.
 copyButton.Activated:Connect(function()
     local enabled = copyButton.BackgroundColor3 ~= GREEN
     setToggle(copyButton, enabled)
 
-    -- Preserve the existing text and allow manual selection/copy.
     codeBox:CaptureFocus()
     codeBox.CursorPosition = 1
     codeBox.SelectionStart = #codeBox.Text + 1
 end)
 
--- Responsive window size
+-- Fly toward selected target
+local flyEnabled = false
+local flyConnection
+local flySpeed = 50
+
+local function stopFly()
+    flyEnabled = false
+    setToggle(flyButton, false)
+
+    if flyConnection then
+        flyConnection:Disconnect()
+        flyConnection = nil
+    end
+end
+
+speedBox.FocusLost:Connect(function()
+    local value = tonumber(speedBox.Text)
+
+    if value then
+        flySpeed = math.clamp(value, 1, 200)
+    end
+
+    speedBox.Text = tostring(flySpeed)
+end)
+
+flyButton.Activated:Connect(function()
+    if flyEnabled then
+        stopFly()
+        return
+    end
+
+    if not selectedTarget or not selectedTarget.Parent then
+        codeBox.Text = "-- Select a block first using Start."
+        updateCanvas()
+        return
+    end
+
+    local speed = tonumber(speedBox.Text)
+    if speed then
+        flySpeed = math.clamp(speed, 1, 200)
+    end
+    speedBox.Text = tostring(flySpeed)
+
+    local target = selectedTarget
+    local targetPart = findTargetPart(target)
+    local character = player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+
+    if not targetPart or not root then
+        codeBox.Text = "-- Target or character is not ready."
+        updateCanvas()
+        return
+    end
+
+    flyEnabled = true
+    setToggle(flyButton, true)
+
+    flyConnection = RunService.Heartbeat:Connect(function(dt)
+        if not flyEnabled then return end
+
+        if not target.Parent or not root.Parent then
+            stopFly()
+            return
+        end
+
+        local currentPart = findTargetPart(target)
+        if not currentPart then
+            stopFly()
+            return
+        end
+
+        local destination = currentPart.Position + Vector3.new(0, 3, 0)
+        local offset = destination - root.Position
+        local distance = offset.Magnitude
+
+        if distance < 2 then
+            stopFly()
+            return
+        end
+
+        local step = math.min(distance, flySpeed * dt)
+        root.CFrame = CFrame.new(
+            root.Position + offset.Unit * step,
+            destination
+        )
+    end)
+end)
+
+player.CharacterAdded:Connect(function()
+    stopFly()
+end)
+
+-- Responsive layout
 local function resize()
     local camera = workspace.CurrentCamera
     if not camera then return end
 
     local viewport = camera.ViewportSize
     local width = math.min(260, math.max(200, viewport.X - 24))
-    local height = math.min(260, math.max(205, viewport.Y - 50))
+    local height = math.min(290, math.max(245, viewport.Y - 50))
 
     window.Size = UDim2.fromOffset(width, height)
-    window.Position = UDim2.new(0.5, -width / 2, 0.5, -height / 2)
+    window.Position = UDim2.new(
+        0.5, -width / 2,
+        0.5, -height / 2
+    )
 
     updateCanvas()
 end
 
 resize()
 
-if workspace.CurrentCamera then
-    workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(resize)
+local function bindCamera(camera)
+    if camera then
+        camera:GetPropertyChangedSignal("ViewportSize"):Connect(resize)
+    end
 end
 
-workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(resize)
+bindCamera(workspace.CurrentCamera)
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+    bindCamera(workspace.CurrentCamera)
+    resize()
+end)
