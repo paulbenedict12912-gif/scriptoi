@@ -4,8 +4,7 @@
 local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
 local source = game:HttpGet(repo .. 'Library.lua')
 
--- 1. Inject touch tracking (global so the library can read it)
---    _G.lastInputPos updates on BOTH mouse and touch, so sliders/drag work everywhere
+-- 1. Touch tracking (global so library can read it)
 local trackingCode = [[
 _G.isTouching = false
 _G.lastInputPos = Vector2.new(0, 0)
@@ -29,31 +28,29 @@ end)
 ]]
 source = trackingCode .. "\n" .. source
 
--- 2. Patch "IsMouseButtonPressed(MouseButton1)" loops → our global touch tracker.
---    Pattern requires a word prefix so it never mangles "UserInputService:..." calls.
+-- 2. Patch IsMouseButtonPressed loops → global touch tracker
 source = source:gsub("[%w_]+:IsMouseButtonPressed%(Enum%.UserInputType%.MouseButton1%)", "_G.isTouching")
 
--- 3. Patch MouseButton1 equality checks to accept Touch
+-- 3. MouseButton1 → accept Touch
 source = source:gsub("Input%.UserInputType%s*==%s*Enum%.UserInputType%.MouseButton1",
     "(Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch)")
 source = source:gsub("Input%.UserInputType%s*~=%s*Enum%.UserInputType%.MouseButton1",
     "(Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch)")
 
--- 4. ⭐ CRITICAL: Patch MouseMovement → Touch.
---    Without this, drag on title bar & slider drag don't fire on mobile (drags send "Touch").
+-- 4. MouseMovement → accept Touch (fixes slider drag + title bar drag + dropdown)
 source = source:gsub("Input%.UserInputType%s*==%s*Enum%.UserInputType%.MouseMovement",
     "(Input.UserInputType == Enum.UserInputType.MouseMovement or Input.UserInputType == Enum.UserInputType.Touch)")
 source = source:gsub("Input%.UserInputType%s*~=%s*Enum%.UserInputType%.MouseMovement",
     "(Input.UserInputType ~= Enum.UserInputType.MouseMovement and Input.UserInputType ~= Enum.UserInputType.Touch)")
 
--- 5. Replace Mouse.X/Mouse.Y with the live input position (works for mouse AND touch)
+-- 5. Mouse.X / Mouse.Y → live input position
 source = source:gsub("Mouse%.X", "_G.lastInputPos.X")
 source = source:gsub("Mouse%.Y", "_G.lastInputPos.Y")
 
 local Library = loadstring(source)()
 
 -- ─────────────────────────────────────────────────────────────
--- UI SETUP (Wider & Longer)
+-- UI SETUP — WIDER but SHORTER
 -- ─────────────────────────────────────────────────────────────
 local Window = Library:CreateWindow({
     Title        = 'Menu',
@@ -61,10 +58,10 @@ local Window = Library:CreateWindow({
     AutoShow     = true,
     TabPadding   = 4,
     MenuFadeTime = 0.1,
-    Size         = UDim2.fromOffset(640, 370) -- bigger than before
+    Size         = UDim2.fromOffset(660, 300) -- wider, NOT longer
 })
 
--- Instantly disable blue selection outline
+-- Disable blue selection outline
 local function RemoveBlueOutline(obj)
     if obj:IsA("GuiButton") then obj.Selectable = false end
 end
@@ -78,7 +75,7 @@ if Library.ScreenGui then
 end
 
 -- ─────────────────────────────────────────────────────────────
--- 🛠️ CUSTOM EXTERNAL TOGGLE BUTTON
+-- 🛠️ CUSTOM EXTERNAL TOGGLE BUTTON (WIDER)
 -- ─────────────────────────────────────────────────────────────
 local ToggleGui = Instance.new("ScreenGui")
 ToggleGui.Name = "CustomToggleGui"
@@ -91,7 +88,7 @@ protect(ToggleGui)
 local BtnOuter = Instance.new("Frame")
 BtnOuter.Name = "ToggleBtnOuter"
 BtnOuter.Parent = ToggleGui
-BtnOuter.Size = UDim2.fromOffset(64, 22)      -- slightly bigger tap target
+BtnOuter.Size = UDim2.fromOffset(92, 24)      -- ✅ wider toggle
 BtnOuter.Position = UDim2.new(0, 15, 0.35, 0)
 BtnOuter.BackgroundColor3 = Color3.new(0, 0, 0)
 BtnOuter.BorderColor3 = Color3.new(0, 0, 0)
@@ -132,14 +129,14 @@ ToggleBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ─────────────────────────────────────────────────────────────
--- 🛠️ COOL RESIZER (Bottom Right) — works on touch now
+-- 🛠️ RESIZER (Bottom Right) — touch-friendly
 -- ─────────────────────────────────────────────────────────────
 local Resizer = Instance.new("TextButton")
 Resizer.Name = "WindowResizer"
 Resizer.Parent = Library.MainFrame
 Resizer.AnchorPoint = Vector2.new(1, 1)
 Resizer.Position = UDim2.new(1, -3, 1, -3)
-Resizer.Size = UDim2.fromOffset(22, 22)       -- bigger touch target
+Resizer.Size = UDim2.fromOffset(22, 22)
 Resizer.BackgroundTransparency = 1
 Resizer.Text = "◢"
 Resizer.TextColor3 = Library.OutlineColor
@@ -163,8 +160,8 @@ end)
 UserInputService.InputChanged:Connect(function(input)
     if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - startPos
-        local newWidth  = math.clamp(startSize.X.Offset + delta.X, 300, 1100)
-        local newHeight = math.clamp(startSize.Y.Offset + delta.Y, 200, 1000)
+        local newWidth  = math.clamp(startSize.X.Offset + delta.X, 320, 1100)
+        local newHeight = math.clamp(startSize.Y.Offset + delta.Y, 180, 1000)
         Library.MainFrame.Size = UDim2.fromOffset(newWidth, newHeight)
     end
 end)
