@@ -127,9 +127,8 @@ runS.Heartbeat:Connect(function()
     local desyncCF = nil
 
     if targetRoot and targetHead then
-        local desyncPos = hasKnifeViewModel(targetPlayer)
-            and (targetRoot.CFrame * CFrame.new(0, 6, 0)).Position
-            or  (targetRoot.CFrame * CFrame.new(0, 1, 2)).Position
+        -- desync teleport position: 4 studs above the target's head
+        local desyncPos = targetHead.Position + Vector3.new(0, 4, 0)
         desyncCF = CFrame.lookAt(desyncPos, targetHead.Position)
     end
 
