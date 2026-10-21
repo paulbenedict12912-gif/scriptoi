@@ -21,14 +21,14 @@ source = source:gsub("InputService:IsMouseButtonPressed%(Enum%.UserInputType%.Mo
 source = source:gsub("Input%.UserInputType == Enum%.UserInputType%.MouseButton1", "(Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch)")
 source = source:gsub("Input%.UserInputType ~= Enum%.UserInputType%.MouseButton1", "(Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch)")
 
--- 3. Patch mouse position for dragging and sliders
+-- 3. Patch mouse position
 source = source:gsub("Mouse%.X", "game:GetService('UserInputService'):GetMouseLocation().X")
 source = source:gsub("Mouse%.Y", "game:GetService('UserInputService'):GetMouseLocation().Y")
 
 local Library = loadstring(source)()
 
 -- ─────────────────────────────────────────────────────────────
--- UI SETUP (Wider Size & No Blue Outline)
+-- UI SETUP (Wider Size)
 -- ─────────────────────────────────────────────────────────────
 local Window = Library:CreateWindow({
     Title        = 'Menu',
@@ -36,60 +36,66 @@ local Window = Library:CreateWindow({
     AutoShow     = true,
     TabPadding   = 4, 
     MenuFadeTime = 0.1,
-    Size         = UDim2.fromOffset(500, 280) -- Made wider (was 420)
+    Size         = UDim2.fromOffset(560, 300)
 })
 
--- Shrink the UI and remove the blue selection outline
-task.spawn(function()
-    task.wait(0.5)
-    if Library.ScreenGui then
-        Library.ScreenGui.IgnoreGuiInset = true
-        
-        local uiScale = Instance.new('UIScale')
-        uiScale.Scale = 0.75
-        uiScale.Parent = Library.ScreenGui
-
-        for _, obj in pairs(Library.ScreenGui:GetDescendants()) do
-            if obj:IsA("GuiButton") then
-                obj.Selectable = false 
-            end
-        end
+-- Instantly disable the blue selection outline
+local function RemoveBlueOutline(obj)
+    if obj:IsA("GuiButton") then
+        obj.Selectable = false
     end
-end)
+end
+
+for _, obj in pairs(Library.ScreenGui:GetDescendants()) do
+    RemoveBlueOutline(obj)
+end
+Library.ScreenGui.DescendantAdded:Connect(RemoveBlueOutline)
+
+-- Scale the UI slightly
+if Library.ScreenGui then
+    local uiScale = Instance.new('UIScale')
+    uiScale.Scale = 0.75
+    uiScale.Parent = Library.ScreenGui
+end
 
 -- ─────────────────────────────────────────────────────────────
--- 🛠️ CUSTOM EXTERNAL TOGGLE BUTTON
+-- 🛠️ CUSTOM EXTERNAL TOGGLE BUTTON (Matches UI Outline)
 -- ─────────────────────────────────────────────────────────────
 local ToggleGui = Instance.new("ScreenGui")
 ToggleGui.Name = "CustomToggleGui"
 ToggleGui.ResetOnSpawn = false
 ToggleGui.IgnoreGuiInset = true
-ToggleGui.DisplayOrder = 100 -- Keeps it above the game
-ToggleGui.Parent = game:GetService("CoreGui")
+ToggleGui.DisplayOrder = 999
+local protect = syn and syn.protect_gui or (function(gui) gui.Parent = game:GetService("CoreGui") end)
+protect(ToggleGui)
 
+-- Outer Frame (Creates the black border like the UI)
+local BtnOuter = Instance.new("Frame")
+BtnOuter.Name = "ToggleBtnOuter"
+BtnOuter.Parent = ToggleGui
+BtnOuter.Size = UDim2.fromOffset(70, 24) -- Smaller button
+BtnOuter.Position = UDim2.new(0, 15, 0.35, 0)
+BtnOuter.BackgroundColor3 = Color3.new(0, 0, 0)
+BtnOuter.BorderColor3 = Color3.new(0, 0, 0)
+
+-- Inner TextButton (The actual clickable part with the UI colors)
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Name = "ToggleBtn"
-ToggleBtn.Parent = ToggleGui
-ToggleBtn.Size = UDim2.fromOffset(80, 30)
-ToggleBtn.Position = UDim2.new(0, 15, 0.35, 0) -- Left side, slightly middle-up
+ToggleBtn.Parent = BtnOuter
+ToggleBtn.Size = UDim2.new(1, 0, 1, 0)
 ToggleBtn.BackgroundColor3 = Library.MainColor
+ToggleBtn.BorderColor3 = Library.OutlineColor
+ToggleBtn.BorderMode = Enum.BorderMode.Inset
 ToggleBtn.TextColor3 = Library.FontColor
 ToggleBtn.Font = Library.Font
-ToggleBtn.TextSize = 15
-ToggleBtn.Text = "Close" -- Starts as Close because AutoShow = true
+ToggleBtn.TextSize = 14
+ToggleBtn.Text = "Close"
 ToggleBtn.AutoButtonColor = false
 ToggleBtn.Selectable = false
 ToggleBtn.Active = true
 
--- Add the matching outline from the UI
-local UIStroke = Instance.new("UIStroke")
-UIStroke.Color = Library.OutlineColor
-UIStroke.Thickness = 1
-UIStroke.Parent = ToggleBtn
-
--- Handle clicking/tapping the button
+-- Button Logic
 local isUIVisible = true
-
 ToggleBtn.MouseButton1Click:Connect(function()
     isUIVisible = not isUIVisible
     
@@ -99,7 +105,7 @@ ToggleBtn.MouseButton1Click:Connect(function()
         ToggleBtn.Text = "Toggle"
     end
     
-    Library:Toggle() -- Calls the library's show/hide function
+    Library:Toggle()
 end)
 
 -- ─────────────────────────────────────────────────────────────
@@ -159,7 +165,7 @@ RightGroup:AddLabel('Color'):AddColorPicker('MyColor', {
 -- SETTINGS TAB
 local MenuGroup = Tabs.Settings:AddLeftGroupbox('Menu')
 MenuGroup:AddButton('Unload', function() 
-    ToggleGui:Destroy() -- Also destroy the toggle button
+    ToggleGui:Destroy()
     Library:Unload() 
 end)
 
