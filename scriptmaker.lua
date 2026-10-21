@@ -1,236 +1,186 @@
--- ─────────────────────────────────────────────────────────────
--- FETCH THE OFFICIAL LIBRARY & PATCH FOR MOBILE TOUCH
--- ─────────────────────────────────────────────────────────────
-local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
-local source = game:HttpGet(repo .. 'Library.lua')
+-- language: Lua, file: rivals_aimbot.lua, target: Rivals PlaceId 17625359962
+-- immune gate: entity.Data.IsInvincible — no auto weapon switch
 
--- 1. Touch tracking (global so library can read it)
-local trackingCode = [[
-_G.isTouching = false
-_G.lastInputPos = Vector2.new(0, 0)
-local __UIS = game:GetService('UserInputService')
-__UIS.InputBegan:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
-        _G.isTouching = true
-        _G.lastInputPos = i.Position
-    end
-end)
-__UIS.InputChanged:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseMovement then
-        _G.lastInputPos = i.Position
-    end
-end)
-__UIS.InputEnded:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
-        _G.isTouching = false
-    end
-end)
-]]
-source = trackingCode .. "\n" .. source
+local repS = cloneref(game:GetService("ReplicatedStorage"))
+local plrs = cloneref(game:GetService("Players"))
+local runS = cloneref(game:GetService("RunService"))
+local ws   = cloneref(game:GetService("Workspace"))
+local lplr = plrs.LocalPlayer
+local util = require(repS.Modules.Utility)
+local enum = require(repS.Modules.EnumLibrary)
+local FighterController  = require(lplr.PlayerScripts.Controllers.FighterController)
+local SpectateController = require(lplr.PlayerScripts.Controllers:WaitForChild("SpectateController"))
 
--- 2. Patch IsMouseButtonPressed loops → global touch tracker
-source = source:gsub("[%w_]+:IsMouseButtonPressed%(Enum%.UserInputType%.MouseButton1%)", "_G.isTouching")
-
--- 3. MouseButton1 → accept Touch
-source = source:gsub("Input%.UserInputType%s*==%s*Enum%.UserInputType%.MouseButton1",
-    "(Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch)")
-source = source:gsub("Input%.UserInputType%s*~=%s*Enum%.UserInputType%.MouseButton1",
-    "(Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch)")
-
--- 4. MouseMovement → accept Touch (fixes slider drag + title bar drag + dropdown)
-source = source:gsub("Input%.UserInputType%s*==%s*Enum%.UserInputType%.MouseMovement",
-    "(Input.UserInputType == Enum.UserInputType.MouseMovement or Input.UserInputType == Enum.UserInputType.Touch)")
-source = source:gsub("Input%.UserInputType%s*~=%s*Enum%.UserInputType%.MouseMovement",
-    "(Input.UserInputType ~= Enum.UserInputType.MouseMovement and Input.UserInputType ~= Enum.UserInputType.Touch)")
-
--- 5. Mouse.X / Mouse.Y → live input position
-source = source:gsub("Mouse%.X", "_G.lastInputPos.X")
-source = source:gsub("Mouse%.Y", "_G.lastInputPos.Y")
-
-local Library = loadstring(source)()
-
--- ─────────────────────────────────────────────────────────────
--- UI SETUP — WIDER but SHORTER
--- ─────────────────────────────────────────────────────────────
-local Window = Library:CreateWindow({
-    Title        = 'Menu',
-    Center       = true,
-    AutoShow     = true,
-    TabPadding   = 4,
-    MenuFadeTime = 0.1,
-    Size         = UDim2.fromOffset(660, 300) -- wider, NOT longer
-})
-
--- Disable blue selection outline
-local function RemoveBlueOutline(obj)
-    if obj:IsA("GuiButton") then obj.Selectable = false end
-end
-for _, obj in pairs(Library.ScreenGui:GetDescendants()) do RemoveBlueOutline(obj) end
-Library.ScreenGui.DescendantAdded:Connect(RemoveBlueOutline)
-
-if Library.ScreenGui then
-    local uiScale = Instance.new('UIScale')
-    uiScale.Scale = 0.78
-    uiScale.Parent = Library.ScreenGui
-end
-
--- ─────────────────────────────────────────────────────────────
--- 🛠️ CUSTOM EXTERNAL TOGGLE BUTTON (WIDER)
--- ─────────────────────────────────────────────────────────────
-local ToggleGui = Instance.new("ScreenGui")
-ToggleGui.Name = "CustomToggleGui"
-ToggleGui.ResetOnSpawn = false
-ToggleGui.IgnoreGuiInset = true
-ToggleGui.DisplayOrder = 999
-local protect = syn and syn.protect_gui or (function(gui) gui.Parent = game:GetService("CoreGui") end)
-protect(ToggleGui)
-
-local BtnOuter = Instance.new("Frame")
-BtnOuter.Name = "ToggleBtnOuter"
-BtnOuter.Parent = ToggleGui
-BtnOuter.Size = UDim2.fromOffset(92, 24)      -- ✅ wider toggle
-BtnOuter.Position = UDim2.new(0, 15, 0.35, 0)
-BtnOuter.BackgroundColor3 = Color3.new(0, 0, 0)
-BtnOuter.BorderColor3 = Color3.new(0, 0, 0)
-
-local BtnInner = Instance.new("Frame")
-BtnInner.Name = "ToggleBtnInner"
-BtnInner.Parent = BtnOuter
-BtnInner.Size = UDim2.new(1, 0, 1, 0)
-BtnInner.BackgroundColor3 = Library.MainColor
-BtnInner.BorderColor3 = Library.OutlineColor
-BtnInner.BorderMode = Enum.BorderMode.Inset
-
-local BtnGradient = Instance.new("UIGradient")
-BtnGradient.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(212, 212, 212))
-})
-BtnGradient.Rotation = 90
-BtnGradient.Parent = BtnInner
-
-local ToggleBtn = Instance.new("TextButton")
-ToggleBtn.Parent = BtnInner
-ToggleBtn.Size = UDim2.new(1, 0, 1, 0)
-ToggleBtn.BackgroundTransparency = 1
-ToggleBtn.TextColor3 = Library.FontColor
-ToggleBtn.Font = Library.Font
-ToggleBtn.TextSize = 13
-ToggleBtn.Text = "Close"
-ToggleBtn.AutoButtonColor = false
-ToggleBtn.Selectable = false
-ToggleBtn.Active = true
-
-local isUIVisible = true
-ToggleBtn.MouseButton1Click:Connect(function()
-    isUIVisible = not isUIVisible
-    ToggleBtn.Text = isUIVisible and "Close" or "Toggle"
-    Library:Toggle()
-end)
-
--- ─────────────────────────────────────────────────────────────
--- 🛠️ RESIZER (Bottom Right) — touch-friendly
--- ─────────────────────────────────────────────────────────────
-local Resizer = Instance.new("TextButton")
-Resizer.Name = "WindowResizer"
-Resizer.Parent = Library.MainFrame
-Resizer.AnchorPoint = Vector2.new(1, 1)
-Resizer.Position = UDim2.new(1, -3, 1, -3)
-Resizer.Size = UDim2.fromOffset(22, 22)
-Resizer.BackgroundTransparency = 1
-Resizer.Text = "◢"
-Resizer.TextColor3 = Library.OutlineColor
-Resizer.TextSize = 16
-Resizer.Font = Enum.Font.Code
-Resizer.Selectable = false
-Resizer.Active = true
-
-local UserInputService = game:GetService("UserInputService")
-local resizing = false
-local startSize, startPos
-
-Resizer.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        resizing = true
-        startSize = Library.MainFrame.Size
-        startPos = input.Position
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - startPos
-        local newWidth  = math.clamp(startSize.X.Offset + delta.X, 320, 1100)
-        local newHeight = math.clamp(startSize.Y.Offset + delta.Y, 180, 1000)
-        Library.MainFrame.Size = UDim2.fromOffset(newWidth, newHeight)
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        resizing = false
-    end
-end)
-
--- ─────────────────────────────────────────────────────────────
--- BUILD YOUR MENU
--- ─────────────────────────────────────────────────────────────
-local Tabs = {
-    Main     = Window:AddTab('Main'),
-    Settings = Window:AddTab('Settings'),
+getgenv().Config = {
+    Enabled  = true,
+    FireRate = 0.0005,
 }
 
-local LeftGroup  = Tabs.Main:AddLeftGroupbox('Features')
-local RightGroup = Tabs.Main:AddRightGroupbox('Values')
+-- ─── deflection tracker ───────────────────────────────────────────────────────
+local lastFire   = 0
+local deflecting = {}
 
-LeftGroup:AddToggle('MyToggle', {
-    Text    = 'Enable feature',
-    Default = true,
-})
-
-LeftGroup:AddButton({
-    Text = 'Click me',
-    Func = function() Library:Notify('Button clicked!') end,
-}):AddButton({
-    Text = 'Sub button',
-    Func = function() Library:Notify('Sub clicked!') end,
-})
-
-LeftGroup:AddLabel('Keybind'):AddKeyPicker('MyKey', {
-    Default = 'MB2',
-    Mode    = 'Toggle',
-    Text    = 'Example keybind'
-})
-
-RightGroup:AddSlider('MySlider', {
-    Text = 'Slider value',
-    Default = 50, Min = 0, Max = 100, Rounding = 0,
-})
-
-RightGroup:AddDropdown('MyDropdown', {
-    Values  = {'Option A', 'Option B', 'Option C'},
-    Default = 1,
-    Text    = 'Choose option',
-})
-
-RightGroup:AddInput('MyInput', {
-    Default     = '',
-    Text        = 'Textbox',
-    Placeholder = 'Type here...',
-})
-
-RightGroup:AddLabel('Color'):AddColorPicker('MyColor', {
-    Default = Color3.fromRGB(0, 200, 120),
-    Title   = 'Pick a color'
-})
-
-local MenuGroup = Tabs.Settings:AddLeftGroupbox('Menu')
-MenuGroup:AddButton('Unload', function()
-    ToggleGui:Destroy()
-    Library:Unload()
+plrs.PlayerRemoving:Connect(function(p)
+    deflecting[p] = nil
 end)
 
-MenuGroup:AddLabel('Menu bind'):AddKeyPicker('MenuKeybind', {
-    Default = 'End', NoUI = true, Text = 'Menu keybind'
-})
-Library.ToggleKeybind = Options.MenuKeybind
+local function updateDeflection()
+    if not FighterController or not FighterController.Objects then return end
+    for _, fo in FighterController.Objects do
+        local p = fo.Player
+        if not p then continue end
+        if not fo.Entity or not fo.Entity:IsAlive() then
+            deflecting[p] = false; continue
+        end
+        local eq = fo.EquippedItem
+        local isKatana = eq and eq.ViewModel and eq.ViewModel.Name == "Katana"
+        deflecting[p] = isKatana
+            and ((eq._attack_cooldown and eq._attack_cooldown > tick()) or false)
+            or false
+    end
+end
+
+-- ─── immune check ─────────────────────────────────────────────────────────────
+local function isImmune(player)
+    if not FighterController or not FighterController.Objects then return true end
+    for _, fo in FighterController.Objects do
+        if fo.Player ~= player then continue end
+        local entity = rawget(fo, 'Entity')
+        if not entity or not entity:IsAlive() then return true end
+        local data = rawget(entity, 'Data')
+        if data ~= nil and rawget(data, 'IsInvincible') == true then return true end
+        local char = player.Character
+        if char then
+            local hum = char:FindFirstChildWhichIsA("Humanoid")
+            if hum and hum.Health <= 0 then return true end
+        end
+        return false
+    end
+    return true
+end
+
+-- ─── team / enemy check ──────────────────────────────────────────────────────
+local function isEnemy(player)
+    if player == lplr then return false end
+    local duel = SpectateController.CurrentDuelSubject
+    local localDueler = duel and duel:GetDueler(lplr)
+    local localTeam   = localDueler and localDueler:Get("TeamID") or nil
+    if localTeam and duel and duel.Duelers then
+        for _, dueler in duel.Duelers do
+            if dueler.Player == player then
+                return dueler:Get("TeamID") ~= localTeam
+            end
+        end
+    end
+    local pTeam = player:GetAttribute("TeamID")
+    local lTeam = lplr:GetAttribute("TeamID")
+    if pTeam and lTeam then return pTeam ~= lTeam end
+    return true
+end
+
+-- ─── closest non-immune enemy ─────────────────────────────────────────────────
+local function getClosestTarget()
+    local char = lplr.Character
+    if not char then return nil, nil, nil end
+    local myRoot = char:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil, nil, nil end
+
+    local best, bestRoot, bestHead, bestDist = nil, nil, nil, 500
+
+    for _, p in plrs:GetPlayers() do
+        if not isEnemy(p) then continue end
+        if isImmune(p) then continue end
+        local pChar = p.Character
+        if not pChar then continue end
+        local pRoot = pChar:FindFirstChild("HumanoidRootPart")
+        local pHead = pChar:FindFirstChild("Head")
+        local pHum  = pChar:FindFirstChildWhichIsA("Humanoid")
+        if not (pRoot and pHead and pHum and pHum.Health > 0) then continue end
+        local dist = (myRoot.Position - pRoot.Position).Magnitude
+        if dist < bestDist then
+            bestDist = dist; best = p; bestRoot = pRoot; bestHead = pHead
+        end
+    end
+    return best, bestRoot, bestHead
+end
+
+-- ─── knife viewmodel check ────────────────────────────────────────────────────
+local function hasKnifeViewModel(targetPlayer)
+    if not targetPlayer then return false end
+    local viewModels = ws:FindFirstChild("ViewModels")
+    if not viewModels then return false end
+    for _, m in viewModels:GetChildren() do
+        if m:IsA("Model")
+           and string.find(m.Name, targetPlayer.Name, 1, true)
+           and string.find(m.Name, "Knife",           1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+-- ─── heartbeat ────────────────────────────────────────────────────────────────
+runS.Heartbeat:Connect(function()
+    updateDeflection()
+
+    local targetPlayer, targetRoot, targetHead = getClosestTarget()
+    local desyncCF = nil
+
+    if targetRoot and targetHead then
+        local desyncPos = hasKnifeViewModel(targetPlayer)
+            and (targetRoot.CFrame * CFrame.new(0, 6, 0)).Position
+            or  (targetRoot.CFrame * CFrame.new(0, 1, 2)).Position
+        desyncCF = CFrame.lookAt(desyncPos, targetHead.Position)
+    end
+
+    if desyncCF and lplr.Character then
+        local myRoot = lplr.Character:FindFirstChild("HumanoidRootPart")
+        if myRoot then
+            local oldCF     = myRoot.CFrame
+            local oldVel    = myRoot.Velocity
+            local oldRotVel = myRoot.RotVelocity
+            myRoot.CFrame   = desyncCF
+            runS:BindToRenderStep("__restore", 101, function()
+                if myRoot then
+                    myRoot.CFrame      = oldCF
+                    myRoot.Velocity    = oldVel
+                    myRoot.RotVelocity = oldRotVel
+                end
+                runS:UnbindFromRenderStep("__restore")
+            end)
+        end
+    end
+
+    if not getgenv().Config.Enabled then return end
+    if not targetPlayer or not targetHead or not targetRoot then return end
+    if deflecting[targetPlayer] then return end
+    if not lplr.Character or not lplr.Character:FindFirstChild("HumanoidRootPart") then return end
+    if not FighterController or not FighterController.LocalFighter then return end
+    local item = FighterController.LocalFighter.EquippedItem
+    if not item then return end
+    if tick() - lastFire < getgenv().Config.FireRate then return end
+    lastFire = tick()
+
+    local originPos = desyncCF and desyncCF.Position or targetRoot.Position
+    local randomOffset = Vector3.new(
+        (math.random() - 0.5) * 0.1,
+        (math.random() - 0.5) * 0.1,
+        (math.random() - 0.5) * 0.1
+    )
+    local aimedPos        = targetHead.Position + randomOffset
+    local aimCF           = CFrame.lookAt(originPos, targetHead.Position)
+    local objSpaceHeadOff = targetHead.CFrame:ToObjectSpace(CFrame.new(aimedPos))
+    local cameradata      = {}
+    cameradata[utf8.char(1)] = {
+        [utf8.char(0)] = util:EncodeCFrame(aimCF),
+        [utf8.char(1)] = util:EncodeCFrame(targetHead.CFrame),
+        [utf8.char(2)] = targetHead,
+        [utf8.char(3)] = util:EncodeCFrame(objSpaceHeadOff)
+    }
+    repS.Remotes.Replication.Fighter.UseItem:FireServer(
+        item:Get("ObjectID"),
+        enum:ToEnum("StartShooting"),
+        cameradata,
+        nil
+    )
+end)
