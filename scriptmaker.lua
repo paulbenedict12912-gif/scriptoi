@@ -1,186 +1,436 @@
--- language: Lua, file: rivals_aimbot.lua, target: Rivals PlaceId 17625359962
--- immune gate: entity.Data.IsInvincible — no auto weapon switch
+--[[
+    Aimbot UI (Linoria v2)
+    Ported from ObfuscatedUE.lua.txt feature/config names.
+    PC + Mobile support.
+]]
 
-local repS = cloneref(game:GetService("ReplicatedStorage"))
-local plrs = cloneref(game:GetService("Players"))
-local runS = cloneref(game:GetService("RunService"))
-local ws   = cloneref(game:GetService("Workspace"))
-local lplr = plrs.LocalPlayer
-local util = require(repS.Modules.Utility)
-local enum = require(repS.Modules.EnumLibrary)
-local FighterController  = require(lplr.PlayerScripts.Controllers.FighterController)
-local SpectateController = require(lplr.PlayerScripts.Controllers:WaitForChild("SpectateController"))
+local repo = 'https://raw.githubusercontent.com/wally-rblx/LinoriaLib/main/'
+local Library      = loadstring(game:HttpGet(repo .. 'Library.lua'))()
+local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
+local SaveManager  = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 
-getgenv().Config = {
-    Enabled  = true,
-    FireRate = 0.0005,
+local UIS       = game:GetService("UserInputService")
+local RS        = game:GetService("RunService")
+local Players   = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local Camera    = Workspace.CurrentCamera
+local LP        = Players.LocalPlayer
+
+local IsMobile = UIS.TouchEnabled and not UIS.KeyboardEnabled
+
+--------------------------------------------------------------------------------
+-- WINDOW + MAIN TAB
+--------------------------------------------------------------------------------
+local Window = Library:CreateWindow({
+    Title       = 'Aimbot UI',
+    Center      = true,
+    AutoShow    = true,
+    TabPadding  = 8,
+    MenuFadeTime= 0.2
+})
+
+local Tabs = {
+    Main = Window:AddTab('Main', 'crosshair'),
 }
 
--- ─── deflection tracker ───────────────────────────────────────────────────────
-local lastFire   = 0
-local deflecting = {}
+local Options = Library.Options
 
-plrs.PlayerRemoving:Connect(function(p)
-    deflecting[p] = nil
+--------------------------------------------------------------------------------
+-- GROUP: AIMBOT SETTINGS  (left)
+--------------------------------------------------------------------------------
+local G_Aimbot = Tabs.Main:AddLeftGroupbox('Aimbot')
+
+G_Aimbot:AddToggle('AimbotEnabled', {
+    Text    = 'Enable Aimbot',
+    Default = false,
+    Tooltip = 'Master switch for the aimbot',
+})
+
+G_Aimbot:AddKeyPicker('AimbotKey', {
+    Default          = 'MB2',
+    Mode             = 'Hold',
+    Text             = 'Aimbot Key',
+    NoUI             = false,
+    SyncToggleState  = false,
+})
+
+G_Aimbot:AddDropdown('AimbotTargetPart', {
+    Values  = { 'Head', 'HumanoidRootPart', 'UpperTorso', 'LowerTorso',
+                'Torso', 'LeftArm', 'RightArm', 'LeftLeg', 'RightLeg' },
+    Default = 'Head',
+    Multi   = false,
+    Text    = 'Target Part',
+    Tooltip = 'Body part the aimbot locks onto',
+})
+
+G_Aimbot:AddSlider('AimbotSmoothing', {
+    Text     = 'Smoothing',
+    Default  = 4,
+    Min      = 1,
+    Max      = 100,
+    Rounding = 0,
+    Compact  = false,
+    Tooltip  = 'Higher = slower / more legit aim',
+})
+
+G_Aimbot:AddSlider('AimbotMaxDistance', {
+    Text     = 'Max Distance',
+    Default  = 1000,
+    Min      = 10,
+    Max      = 5000,
+    Rounding = 0,
+    Tooltip  = 'Do not target players farther than this',
+})
+
+G_Aimbot:AddToggle('AimbotTeamCheck', {
+    Text    = 'Team Check',
+    Default = true,
+    Tooltip = 'Skip teammates',
+})
+
+G_Aimbot:AddToggle('AimbotWallCheck', {
+    Text    = 'Wall Check (Visible Only)',
+    Default = true,
+    Tooltip = 'Only target players you can see',
+})
+
+G_Aimbot:AddToggle('AimbotIgnoreProtected', {
+    Text    = 'Ignore Protected',
+    Default = true,
+    Tooltip = 'Skip protected / kata players',
+})
+
+G_Aimbot:AddToggle('AimbotMatchAxis', {
+    Text    = 'Match Axis',
+    Default = false,
+    Tooltip = 'Lock camera axis to target axis',
+})
+
+--------------------------------------------------------------------------------
+-- GROUP: AIMBOT FOV  (right)
+--------------------------------------------------------------------------------
+local G_Fov = Tabs.Main:AddRightGroupbox('Aimbot FOV')
+
+G_Fov:AddToggle('AimbotShowFov', {
+    Text    = 'Show FOV',
+    Default = true,
+    Tooltip = 'Draw the aimbot FOV circle',
+})
+
+G_Fov:AddSlider('AimbotFov', {
+    Text     = 'FOV Size',
+    Default  = 120,
+    Min      = 10,
+    Max      = 1000,
+    Rounding = 0,
+    Tooltip  = 'Radius of the FOV circle',
+})
+
+G_Fov:AddSlider('AimbotRadius', {
+    Text     = 'Aimbot Radius',
+    Default  = 0,
+    Min      = 0,
+    Max      = 100,
+    Rounding = 0,
+    Tooltip  = 'Extra radius offset',
+})
+
+G_Fov:AddSlider('AimbotFovRotation', {
+    Text     = 'FOV Rotation',
+    Default  = 0,
+    Min      = 0,
+    Max      = 360,
+    Rounding = 0,
+    Tooltip  = 'Base rotation of the FOV circle',
+})
+
+G_Fov:AddSlider('AimbotFovRotationSpeed', {
+    Text     = 'FOV Rotation Speed',
+    Default  = 0,
+    Min      = 0,
+    Max      = 10,
+    Rounding = 2,
+    Tooltip  = '0 = static, higher = spins',
+})
+
+G_Fov:AddColorPicker('AimbotFovFill', {
+    Title        = 'FOV Fill',
+    Default      = Color3.fromRGB(255, 255, 255),
+    Transparency = 0.8,
+})
+
+G_Fov:AddColorPicker('AimbotFovOutline', {
+    Title        = 'FOV Outline',
+    Default      = Color3.fromRGB(255, 255, 255),
+    Transparency = 0.5,
+})
+
+--------------------------------------------------------------------------------
+-- GROUP: TARGET HIGHLIGHT  (left, under Aimbot)
+--------------------------------------------------------------------------------
+local G_Highlight = Tabs.Main:AddLeftGroupbox('Target Highlight')
+
+G_Highlight:AddToggle('AimbotFill', {
+    Text    = 'Fill',
+    Default = true,
+    Tooltip = 'Highlight fill on the target',
+})
+
+G_Highlight:AddColorPicker('AimbotFillColor1', {
+    Title = 'Fill Color 1', Default = Color3.fromRGB(255, 255, 255), Transparency = 0.5,
+})
+G_Highlight:AddColorPicker('AimbotFillColor2', {
+    Title = 'Fill Color 2', Default = Color3.fromRGB(200, 200, 200), Transparency = 0.5,
+})
+G_Highlight:AddColorPicker('AimbotFillColor3', {
+    Title = 'Fill Color 3', Default = Color3.fromRGB(150, 150, 150), Transparency = 0.5,
+})
+
+G_Highlight:AddToggle('AimbotOutline', {
+    Text    = 'Outline',
+    Default = true,
+    Tooltip = 'Highlight outline on the target',
+})
+
+G_Highlight:AddColorPicker('AimbotOutlineColor1', {
+    Title = 'Outline Color 1', Default = Color3.fromRGB(255, 255, 255), Transparency = 0.5,
+})
+G_Highlight:AddColorPicker('AimbotOutlineColor2', {
+    Title = 'Outline Color 2', Default = Color3.fromRGB(200, 200, 200), Transparency = 0.5,
+})
+G_Highlight:AddColorPicker('AimbotOutlineColor3', {
+    Title = 'Outline Color 3', Default = Color3.fromRGB(150, 150, 150), Transparency = 0.5,
+})
+
+--------------------------------------------------------------------------------
+-- GROUP: AIM BEHAVIOR  (right, under FOV)
+--------------------------------------------------------------------------------
+local G_Behavior = Tabs.Main:AddRightGroupbox('Aim Behavior')
+
+G_Behavior:AddSlider('AimbotDelaySmooth', {
+    Text     = 'Delay Smooth',
+    Default  = 0,
+    Min      = 0,
+    Max      = 1,
+    Rounding = 2,
+    Tooltip  = 'Extra delay applied to smoothing',
+})
+
+G_Behavior:AddSlider('AimbotDelayPosition', {
+    Text     = 'Delay Position',
+    Default  = 0,
+    Min      = 0,
+    Max      = 1,
+    Rounding = 2,
+    Tooltip  = 'Extra delay applied to the aim position',
+})
+
+G_Behavior:AddToggle('AimbotMobileAim', {
+    Text    = 'Mobile Touch Aim',
+    Default = true,
+    Tooltip = 'While a finger is held on the right half of the screen, the aimbot will track',
+})
+
+--------------------------------------------------------------------------------
+-- FOV CIRCLE RENDER
+--------------------------------------------------------------------------------
+local FovGui = Instance.new('ScreenGui')
+FovGui.Name          = 'AimbotFov'
+FovGui.ResetOnSpawn  = false
+FovGui.IgnoreGuiInset= true
+do
+    local ok = pcall(function() FovGui.Parent = game:GetService('CoreGui') end)
+    if not ok then FovGui.Parent = LP:WaitForChild('PlayerGui') end
+end
+
+local FovFrame = Instance.new('Frame')
+FovFrame.BackgroundTransparency = 1
+FovFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+FovFrame.Position    = UDim2.new(0.5, 0, 0.5, 0)
+FovFrame.Parent      = FovGui
+
+local FovCircle = Instance.new('Frame')
+FovCircle.BorderSizePixel       = 0
+FovCircle.BackgroundTransparency= 0.8
+FovCircle.Size                  = UDim2.new(1, 0, 1, 0)
+FovCircle.Parent                = FovFrame
+
+Instance.new('UICorner', FovCircle).CornerRadius = UDim.new(0.5, 0)
+
+local FovStroke = Instance.new('UIStroke')
+FovStroke.Thickness = 1
+FovStroke.Parent    = FovCircle
+
+RS.RenderStepped:Connect(function()
+    if not Options.AimbotShowFov.Value then
+        FovFrame.Visible = false
+        return
+    end
+    FovFrame.Visible = true
+
+    local size = Options.AimbotFov.Value * 2
+    FovFrame.Size     = UDim2.new(0, size, 0, size)
+    FovFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+
+    FovCircle.BackgroundColor3      = Options.AimbotFovFill.Value
+    FovCircle.BackgroundTransparency= Options.AimbotFovFill.Transparency
+    FovStroke.Color                 = Options.AimbotFovOutline.Value
+    FovStroke.Transparency          = Options.AimbotFovOutline.Transparency
+
+    local rot = Options.AimbotFovRotation.Value +
+                (tick() * Options.AimbotFovRotationSpeed.Value * 60) % 360
+    FovFrame.Rotation = rot
 end)
 
-local function updateDeflection()
-    if not FighterController or not FighterController.Objects then return end
-    for _, fo in FighterController.Objects do
-        local p = fo.Player
-        if not p then continue end
-        if not fo.Entity or not fo.Entity:IsAlive() then
-            deflecting[p] = false; continue
+--------------------------------------------------------------------------------
+-- TOUCH AIM TRACKING (mobile)
+--------------------------------------------------------------------------------
+local TouchAiming = false
+if IsMobile then
+    UIS.TouchStarted:Connect(function(input)
+        if input.Position.X > Camera.ViewportSize.X / 2 then
+            TouchAiming = true
         end
-        local eq = fo.EquippedItem
-        local isKatana = eq and eq.ViewModel and eq.ViewModel.Name == "Katana"
-        deflecting[p] = isKatana
-            and ((eq._attack_cooldown and eq._attack_cooldown > tick()) or false)
-            or false
-    end
+    end)
+    UIS.TouchEnded:Connect(function(input)
+        if input.Position.X > Camera.ViewportSize.X / 2 then
+            TouchAiming = false
+        end
+    end)
 end
 
--- ─── immune check ─────────────────────────────────────────────────────────────
-local function isImmune(player)
-    if not FighterController or not FighterController.Objects then return true end
-    for _, fo in FighterController.Objects do
-        if fo.Player ~= player then continue end
-        local entity = rawget(fo, 'Entity')
-        if not entity or not entity:IsAlive() then return true end
-        local data = rawget(entity, 'Data')
-        if data ~= nil and rawget(data, 'IsInvincible') == true then return true end
-        local char = player.Character
-        if char then
-            local hum = char:FindFirstChildWhichIsA("Humanoid")
-            if hum and hum.Health <= 0 then return true end
-        end
-        return false
-    end
-    return true
+--------------------------------------------------------------------------------
+-- TARGET ACQUISITION
+--------------------------------------------------------------------------------
+local CurrentTarget = nil
+
+local function IsPlayerVisible(player, part)
+    if not Options.AimbotWallCheck.Value then return true end
+    local ray = RaycastParams.new()
+    ray.FilterType = Enum.RaycastFilterType.Exclude
+    ray.FilterDescendantsInstances = {
+        LP.Character,
+        player.Character,
+        FovGui
+    }
+    local hit = Workspace:Raycast(Camera.CFrame.Position, part.Position - Camera.CFrame.Position, ray)
+    return hit == nil or hit.Instance:IsDescendantOf(player.Character)
 end
 
--- ─── team / enemy check ──────────────────────────────────────────────────────
-local function isEnemy(player)
-    if player == lplr then return false end
-    local duel = SpectateController.CurrentDuelSubject
-    local localDueler = duel and duel:GetDueler(lplr)
-    local localTeam   = localDueler and localDueler:Get("TeamID") or nil
-    if localTeam and duel and duel.Duelers then
-        for _, dueler in duel.Duelers do
-            if dueler.Player == player then
-                return dueler:Get("TeamID") ~= localTeam
-            end
-        end
-    end
-    local pTeam = player:GetAttribute("TeamID")
-    local lTeam = lplr:GetAttribute("TeamID")
-    if pTeam and lTeam then return pTeam ~= lTeam end
-    return true
-end
-
--- ─── closest non-immune enemy ─────────────────────────────────────────────────
-local function getClosestTarget()
-    local char = lplr.Character
-    if not char then return nil, nil, nil end
-    local myRoot = char:FindFirstChild("HumanoidRootPart")
-    if not myRoot then return nil, nil, nil end
-
-    local best, bestRoot, bestHead, bestDist = nil, nil, nil, 500
-
-    for _, p in plrs:GetPlayers() do
-        if not isEnemy(p) then continue end
-        if isImmune(p) then continue end
-        local pChar = p.Character
-        if not pChar then continue end
-        local pRoot = pChar:FindFirstChild("HumanoidRootPart")
-        local pHead = pChar:FindFirstChild("Head")
-        local pHum  = pChar:FindFirstChildWhichIsA("Humanoid")
-        if not (pRoot and pHead and pHum and pHum.Health > 0) then continue end
-        local dist = (myRoot.Position - pRoot.Position).Magnitude
-        if dist < bestDist then
-            bestDist = dist; best = p; bestRoot = pRoot; bestHead = pHead
-        end
-    end
-    return best, bestRoot, bestHead
-end
-
--- ─── knife viewmodel check ────────────────────────────────────────────────────
-local function hasKnifeViewModel(targetPlayer)
-    if not targetPlayer then return false end
-    local viewModels = ws:FindFirstChild("ViewModels")
-    if not viewModels then return false end
-    for _, m in viewModels:GetChildren() do
-        if m:IsA("Model")
-           and string.find(m.Name, targetPlayer.Name, 1, true)
-           and string.find(m.Name, "Knife",           1, true) then
-            return true
-        end
+local function IsProtected(player)
+    -- Common FFA/kata check names. Extend as needed.
+    for _, n in ipairs({'Kata', 'Protected', 'KataProtected', 'Safe'}) do
+        local v = player:FindFirstChild(n) or (player.Character and player.Character:FindFirstChild(n))
+        if v then return true end
     end
     return false
 end
 
--- ─── heartbeat ────────────────────────────────────────────────────────────────
-runS.Heartbeat:Connect(function()
-    updateDeflection()
+local function GetClosestTarget()
+    local fov      = Options.AimbotFov.Value
+    local maxDist  = Options.AimbotMaxDistance.Value
+    local partName = Options.AimbotTargetPart.Value
+    local screenC  = Camera.ViewportSize / 2
+    local best, bestDist = nil, fov
 
-    local targetPlayer, targetRoot, targetHead = getClosestTarget()
-    local desyncCF = nil
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LP then continue end
+        local char = plr.Character
+        if not char then continue end
+        local hum = char:FindFirstChildOfClass('Humanoid')
+        if not hum or hum.Health <= 0 then continue end
 
-    if targetRoot and targetHead then
-        local desyncPos = hasKnifeViewModel(targetPlayer)
-            and (targetRoot.CFrame * CFrame.new(0, 6, 0)).Position
-            or  (targetRoot.CFrame * CFrame.new(0, 1, 2)).Position
-        desyncCF = CFrame.lookAt(desyncPos, targetHead.Position)
-    end
+        if Options.AimbotTeamCheck.Value and plr.Team == LP.Team then continue end
+        if Options.AimbotIgnoreProtected.Value and IsProtected(plr) then continue end
 
-    if desyncCF and lplr.Character then
-        local myRoot = lplr.Character:FindFirstChild("HumanoidRootPart")
-        if myRoot then
-            local oldCF     = myRoot.CFrame
-            local oldVel    = myRoot.Velocity
-            local oldRotVel = myRoot.RotVelocity
-            myRoot.CFrame   = desyncCF
-            runS:BindToRenderStep("__restore", 101, function()
-                if myRoot then
-                    myRoot.CFrame      = oldCF
-                    myRoot.Velocity    = oldVel
-                    myRoot.RotVelocity = oldRotVel
-                end
-                runS:UnbindFromRenderStep("__restore")
-            end)
+        local part = char:FindFirstChild(partName)
+        if not part then continue end
+
+        if LP.Character and LP.Character:FindFirstChild('HumanoidRootPart') then
+            local dist = (LP.Character.HumanoidRootPart.Position - part.Position).Magnitude
+            if dist > maxDist then continue end
+        end
+
+        local sp, onScreen = Camera:WorldToViewportPoint(part.Position)
+        if onScreen then
+            local screenDist = (Vector2.new(sp.X, sp.Y) - screenC).Magnitude
+            if screenDist < bestDist and IsPlayerVisible(plr, part) then
+                bestDist = screenDist
+                best = { Player = plr, Part = part }
+            end
         end
     end
 
-    if not getgenv().Config.Enabled then return end
-    if not targetPlayer or not targetHead or not targetRoot then return end
-    if deflecting[targetPlayer] then return end
-    if not lplr.Character or not lplr.Character:FindFirstChild("HumanoidRootPart") then return end
-    if not FighterController or not FighterController.LocalFighter then return end
-    local item = FighterController.LocalFighter.EquippedItem
-    if not item then return end
-    if tick() - lastFire < getgenv().Config.FireRate then return end
-    lastFire = tick()
+    return best
+end
 
-    local originPos = desyncCF and desyncCF.Position or targetRoot.Position
-    local randomOffset = Vector3.new(
-        (math.random() - 0.5) * 0.1,
-        (math.random() - 0.5) * 0.1,
-        (math.random() - 0.5) * 0.1
-    )
-    local aimedPos        = targetHead.Position + randomOffset
-    local aimCF           = CFrame.lookAt(originPos, targetHead.Position)
-    local objSpaceHeadOff = targetHead.CFrame:ToObjectSpace(CFrame.new(aimedPos))
-    local cameradata      = {}
-    cameradata[utf8.char(1)] = {
-        [utf8.char(0)] = util:EncodeCFrame(aimCF),
-        [utf8.char(1)] = util:EncodeCFrame(targetHead.CFrame),
-        [utf8.char(2)] = targetHead,
-        [utf8.char(3)] = util:EncodeCFrame(objSpaceHeadOff)
-    }
-    repS.Remotes.Replication.Fighter.UseItem:FireServer(
-        item:Get("ObjectID"),
-        enum:ToEnum("StartShooting"),
-        cameradata,
-        nil
-    )
+local function IsAimActive()
+    if IsMobile and Options.AimbotMobileAim.Value then
+        return TouchAiming
+    end
+    return Options.AimbotKey:GetState()
+end
+
+--------------------------------------------------------------------------------
+-- AIM LOOP  (runs after the default camera so we can override it)
+--------------------------------------------------------------------------------
+RS:BindToRenderStep('Aimbot', Enum.RenderPriority.Camera.Value + 1, function(dt)
+    if not Options.AimbotEnabled.Value or not IsAimActive() then
+        CurrentTarget = nil
+        return
+    end
+
+    CurrentTarget = GetClosestTarget()
+    if not CurrentTarget then return end
+
+    local targetPos = CurrentTarget.Part.Position
+
+    -- Smoothing 1..100 → alpha 1..0.01
+    local smooth = math.clamp(Options.AimbotSmoothing.Value, 1, 100)
+    local alpha  = 1 / smooth
+
+    if Options.AimbotDelaySmooth.Value > 0 then
+        alpha = alpha * (1 - Options.AimbotDelaySmooth.Value)
+    end
+
+    local currentCF = Camera.CFrame
+    local desiredCF = CFrame.new(currentCF.Position, targetPos)
+
+    if Options.AimbotMatchAxis.Value then
+        local targetCF = CurrentTarget.Part.CFrame
+        desiredCF = CFrame.new(currentCF.Position, targetPos) * (targetCF - targetCF.Position)
+    end
+
+    Camera.CFrame = currentCF:Lerp(desiredCF, alpha)
 end)
+
+--------------------------------------------------------------------------------
+-- SAVE / LOAD  (mirrors the original SaveManager style)
+--------------------------------------------------------------------------------
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({
+    'AimbotKey',
+    'AimbotMobileAim',
+})
+SaveManager:SetFolder('AimbotUI')
+SaveManager:BuildConfigSection(Tabs.Main)
+SaveManager:LoadAutoloadConfig()
+
+ThemeManager:SetLibrary(Library)
+ThemeManager:ApplyToTab(Tabs.Main)
+
+--------------------------------------------------------------------------------
+-- CLEANUP
+--------------------------------------------------------------------------------
+Library:OnUnload(function()
+    if FovGui then FovGui:Destroy() end
+    RS:UnbindFromRenderStep('Aimbot')
+end)
+
+Library:Notify(
+    IsMobile
+        and 'Aimbot UI loaded. Use the floating button to open/close.'
+        or  'Aimbot UI loaded. RightShift to toggle.',
+    3
+)
