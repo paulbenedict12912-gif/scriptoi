@@ -1,5 +1,5 @@
 -- language: Lua, file: rivals_aimbot.lua, target: Rivals PlaceId 17625359962
--- immune gate: EntityRemoved=true, EntityAdded=4s timer then false
+-- immune gate: entity.Data.IsInvincible — no auto weapon switch
 
 local repS = cloneref(game:GetService("ReplicatedStorage"))
 local plrs = cloneref(game:GetService("Players"))
@@ -12,75 +12,23 @@ local FighterController  = require(lplr.PlayerScripts.Controllers.FighterControl
 local SpectateController = require(lplr.PlayerScripts.Controllers:WaitForChild("SpectateController"))
 
 getgenv().Config = {
-    Enabled    = true,
-    FireRate   = 0.0005,
-    WeaponSlot = "Melee"
+    Enabled  = true,
+    FireRate = 0.0005,
 }
 
-local SPAWN_PROTECT = 4 -- seconds, tune up/down if needed
-
-local slots = { Primary = 1, Secondary = 2, Melee = 3 }
-local function getSlotNumber() return slots[getgenv().Config.WeaponSlot] or 3 end
-
-task.spawn(function()
-    local lf = FighterController.LocalFighter
-    while not lf do task.wait(0.1); lf = FighterController.LocalFighter end
-    pcall(function() lf:EquipItem(getSlotNumber()) end)
-end)
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if not getgenv().Config.Enabled then continue end
-        local lf = FighterController.LocalFighter
-        if lf then pcall(function() lf:EquipItem(getSlotNumber()) end) end
-    end
-end)
-
--- ─── trackers ─────────────────────────────────────────────────────────────────
+-- ─── deflection tracker ───────────────────────────────────────────────────────
 local lastFire   = 0
 local deflecting = {}
-local invincible = {}
-local hooked     = {}
-local spawnToken = {} -- guards stale timers
-
-local function hookFO(fo)
-    if hooked[fo] then return end
-    hooked[fo] = true
-
-    local p = fo.Player
-    -- initial state
-    invincible[p] = not fo.Entity or not fo.Entity:IsAlive()
-
-    fo.EntityRemoved:Connect(function()
-        invincible[p] = true
-        spawnToken[p] = nil
-    end)
-
-    fo.EntityAdded:Connect(function()
-        invincible[p] = true
-        local token = {}
-        spawnToken[p] = token
-        task.delay(SPAWN_PROTECT, function()
-            if spawnToken[p] == token then
-                invincible[p] = false
-            end
-        end)
-    end)
-end
 
 plrs.PlayerRemoving:Connect(function(p)
     deflecting[p] = nil
-    invincible[p] = nil
-    spawnToken[p] = nil
 end)
 
--- ─── deflection tracker ───────────────────────────────────────────────────────
 local function updateDeflection()
     if not FighterController or not FighterController.Objects then return end
     for _, fo in FighterController.Objects do
         local p = fo.Player
         if not p then continue end
-        hookFO(fo)
         if not fo.Entity or not fo.Entity:IsAlive() then
             deflecting[p] = false; continue
         end
@@ -97,9 +45,10 @@ local function isImmune(player)
     if not FighterController or not FighterController.Objects then return true end
     for _, fo in FighterController.Objects do
         if fo.Player ~= player then continue end
-        hookFO(fo)
-        if not fo.Entity or not fo.Entity:IsAlive() then return true end
-        if invincible[player] then return true end
+        local entity = rawget(fo, 'Entity')
+        if not entity or not entity:IsAlive() then return true end
+        local data = rawget(entity, 'Data')
+        if data ~= nil and rawget(data, 'IsInvincible') == true then return true end
         local char = player.Character
         if char then
             local hum = char:FindFirstChildWhichIsA("Humanoid")
@@ -141,14 +90,12 @@ local function getClosestTarget()
     for _, p in plrs:GetPlayers() do
         if not isEnemy(p) then continue end
         if isImmune(p) then continue end
-
         local pChar = p.Character
         if not pChar then continue end
         local pRoot = pChar:FindFirstChild("HumanoidRootPart")
         local pHead = pChar:FindFirstChild("Head")
         local pHum  = pChar:FindFirstChildWhichIsA("Humanoid")
         if not (pRoot and pHead and pHum and pHum.Health > 0) then continue end
-
         local dist = (myRoot.Position - pRoot.Position).Magnitude
         if dist < bestDist then
             bestDist = dist; best = p; bestRoot = pRoot; bestHead = pHead
