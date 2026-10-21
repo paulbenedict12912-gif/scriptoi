@@ -1,4 +1,4 @@
--- FULLY FIXED MOBILE SCRIPT (Touch Fixed & Blue Outline Removed)
+-- FINAL MOBILE TOUCH FIX
 local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
 
 local Library      = loadstring(game:HttpGet(repo .. 'Library.lua'))()
@@ -7,48 +7,45 @@ local SaveManager  = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))(
 
 local UserInputService = game:GetService('UserInputService')
 
--- Create Window (Forced small size)
+-- 1. Force smaller base size
 local Window = Library:CreateWindow({
     Title        = 'Menu',
     Center       = true,
     AutoShow     = true,
     TabPadding   = 4, 
     MenuFadeTime = 0.1,
-    Size         = UDim2.fromOffset(420, 260) -- Very compact
+    Size         = UDim2.fromOffset(400, 240)
 })
 
--- ─────────────────────────────────────────────────────────────
--- 🛠️ MOBILE TOUCH FIX (Removes the blue outline & fixes clicks)
--- ─────────────────────────────────────────────────────────────
+-- 2. Fix touch alignment and selection
 if UserInputService.TouchEnabled then
     task.spawn(function()
-        task.wait(0.5) -- Wait for UI to build
+        task.wait(0.5) -- Wait for UI to fully load
         
         if Library.ScreenGui then
-            -- Scale the whole UI down to 75% (fixes hitbox misalignment)
+            -- Fix touch offset (crucial for mobile)
+            Library.ScreenGui.IgnoreGuiInset = true
+            
+            -- Scale down the UI (smaller)
             local uiScale = Instance.new('UIScale')
-            uiScale.Scale = 0.75
+            uiScale.Scale = 0.65 -- 65% size
             uiScale.Parent = Library.ScreenGui
 
-            -- Loop through every button in the menu
+            -- Loop through EVERY element in the GUI
             for _, obj in pairs(Library.ScreenGui:GetDescendants()) do
-                if obj:IsA("TextButton") or obj:IsA("ImageButton") then
-                    
-                    -- 1. Stop the blue outline! 
-                    -- This forces the mobile engine to CLICK instead of just SELECT
+                if obj:IsA("Frame") or obj:IsA("ScrollingFrame") then
+                    -- Make background frames non-interactive so they don't block buttons
+                    obj.Active = false
+                elseif obj:IsA("TextButton") or obj:IsA("ImageButton") then
+                    -- This is the fix for the blue outline: disable selection!
                     obj.Selectable = false 
                     obj.Active = true
-                    
-                    -- 2. Force touch to register as a click
-                    obj.InputBegan:Connect(function(input)
-                        if input.UserInputType == Enum.UserInputType.Touch then
-                            -- We trigger the click manually just in case the engine missed it
-                            if obj.Visible and obj.Parent then
-                                -- (Callbacks are handled natively by the library once Selectable is false)
-                            end
-                        end
-                    end)
                 end
+            end
+            
+            -- Ensure the title bar is still draggable
+            if Library.TitleBar then
+                Library.TitleBar.Active = true
             end
         end
     end)
@@ -59,7 +56,6 @@ local Tabs = {
     Settings = Window:AddTab('Settings'),
 }
 
--- Split into Left and Right to keep it short (No long scrolling)
 local LeftGroup  = Tabs.Main:AddLeftGroupbox('Features')
 local RightGroup = Tabs.Main:AddRightGroupbox('Values')
 
