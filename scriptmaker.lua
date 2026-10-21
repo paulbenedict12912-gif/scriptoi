@@ -1,11 +1,10 @@
--- language: Lua, file: rivals_full.lua, target: Rivals PlaceId 17625359962
--- immune filter + desync aimbot + floating drag toggle
+-- language: Lua, file: rivals_aimbot.lua, target: Rivals PlaceId 17625359962
+-- immunity now tracks InvincibilityChanged signal — the only real immunity gate in the FO
 
 local repS = cloneref(game:GetService("ReplicatedStorage"))
 local plrs = cloneref(game:GetService("Players"))
 local runS = cloneref(game:GetService("RunService"))
 local ws   = cloneref(game:GetService("Workspace"))
-local uis  = cloneref(game:GetService("UserInputService"))
 local lplr = plrs.LocalPlayer
 local util = require(repS.Modules.Utility)
 local enum = require(repS.Modules.EnumLibrary)
@@ -15,19 +14,17 @@ local SpectateController = require(lplr.PlayerScripts.Controllers:WaitForChild("
 getgenv().Config = {
     Enabled    = true,
     FireRate   = 0.0005,
-    WeaponSlot = "Melee"  -- "Primary" | "Secondary" | "Melee"
+    WeaponSlot = "Melee"
 }
 
 local slots = { Primary = 1, Secondary = 2, Melee = 3 }
 local function getSlotNumber() return slots[getgenv().Config.WeaponSlot] or 3 end
 
--- ─── auto equip ───────────────────────────────────────────────────────────────
 task.spawn(function()
     local lf = FighterController.LocalFighter
     while not lf do task.wait(0.1); lf = FighterController.LocalFighter end
     pcall(function() lf:EquipItem(getSlotNumber()) end)
 end)
-
 task.spawn(function()
     while true do
         task.wait(1)
@@ -41,64 +38,83 @@ end)
 local lastFire   = 0
 local deflecting = {}
 
-plrs.PlayerRemoving:Connect(function(p) deflecting[p] = nil end)
+-- ─── INVINCIBILITY TRACKER ────────────────────────────────────────────────────
+local invincible = {}
+local hooked     = {}
+
+local function hookFO(fo)
+    if hooked[fo] then return end
+    hooked[fo] = true
+
+    if fo._immune_damage_guis then
+        invincible[fo.Player] = next(fo._immune_damage_guis) ~= nil
+    end
+
+    if fo.InvincibilityChanged then
+        fo.InvincibilityChanged:Connect(function(state)
+            invincible[fo.Player] = state
+        end)
+    end
+    if fo.EntityRemoved then
+        fo.EntityRemoved:Connect(function()
+            invincible[fo.Player] = false
+        end)
+    end
+end
+
+plrs.PlayerRemoving:Connect(function(p)
+    deflecting[p] = nil
+    invincible[p] = nil
+end)
 
 local function updateDeflection()
     if not FighterController or not FighterController.Objects then return end
     for _, fo in FighterController.Objects do
         local p = fo.Player
         if not p then continue end
-        if not fo.Entity or not fo.Entity:IsAlive() or fo:Get("IsSpectating") then
+        hookFO(fo)
+        if not fo.Entity or not fo.Entity:IsAlive() then
             deflecting[p] = false; continue
         end
-        local eq       = fo.EquippedItem
+        local eq = fo.EquippedItem
         local isKatana = eq and eq.ViewModel and eq.ViewModel.Name == "Katana"
-        deflecting[p]  = isKatana
+        deflecting[p] = isKatana
             and ((eq._attack_cooldown and eq._attack_cooldown > tick()) or false)
             or false
     end
 end
 
--- ─── immune check ─────────────────────────────────────────────────────────────
-local IMMUNE_KEYS = {
-    "IsInvincible",
-    "Invincible",
-    "IsRespawning",
-    "IsSpectating",
-    "IsImmune",
-    "SpawnProtect",
-}
-
+-- ─── IMMUNE CHECK ─────────────────────────────────────────────────────────────
 local function isImmune(player)
     if not FighterController or not FighterController.Objects then return true end
     for _, fo in FighterController.Objects do
         if fo.Player ~= player then continue end
+
+        hookFO(fo)
+
         if not fo.Entity or not fo.Entity:IsAlive() then return true end
-        if fo:Get("IsSpectating") then return true end
-        for _, key in IMMUNE_KEYS do
-            local ok, val = pcall(function() return fo:Get(key) end)
-            if ok and val then return true end
+
+        if invincible[player] then return true end
+
+        if fo._immune_damage_guis and next(fo._immune_damage_guis) ~= nil then
+            return true
         end
+
         local char = player.Character
         if char then
-            for _, key in IMMUNE_KEYS do
-                if char:GetAttribute(key) then return true end
-            end
             local hum = char:FindFirstChildWhichIsA("Humanoid")
             if hum and hum.Health <= 0 then return true end
         end
-        for _, key in IMMUNE_KEYS do
-            if player:GetAttribute(key) then return true end
-        end
+
         return false
     end
     return true
 end
 
--- ─── enemy check ─────────────────────────────────────────────────────────────
+-- ─── team / enemy check ──────────────────────────────────────────────────────
 local function isEnemy(player)
     if player == lplr then return false end
-    local duel       = SpectateController.CurrentDuelSubject
+    local duel = SpectateController.CurrentDuelSubject
     local localDueler = duel and duel:GetDueler(lplr)
     local localTeam   = localDueler and localDueler:Get("TeamID") or nil
     if localTeam and duel and duel.Duelers then
@@ -124,20 +140,19 @@ local function getClosestTarget()
     local best, bestRoot, bestHead, bestDist = nil, nil, nil, 500
 
     for _, p in plrs:GetPlayers() do
-        if not isEnemy(p)  then continue end
-        if isImmune(p)     then continue end
+        if not isEnemy(p) then continue end
+        if isImmune(p) then continue end
+
         local pChar = p.Character
         if not pChar then continue end
         local pRoot = pChar:FindFirstChild("HumanoidRootPart")
         local pHead = pChar:FindFirstChild("Head")
         local pHum  = pChar:FindFirstChildWhichIsA("Humanoid")
         if not (pRoot and pHead and pHum and pHum.Health > 0) then continue end
+
         local dist = (myRoot.Position - pRoot.Position).Magnitude
         if dist < bestDist then
-            bestDist = dist
-            best     = p
-            bestRoot = pRoot
-            bestHead = pHead
+            bestDist = dist; best = p; bestRoot = pRoot; bestHead = pHead
         end
     end
     return best, bestRoot, bestHead
@@ -151,7 +166,7 @@ local function hasKnifeViewModel(targetPlayer)
     for _, m in viewModels:GetChildren() do
         if m:IsA("Model")
            and string.find(m.Name, targetPlayer.Name, 1, true)
-           and string.find(m.Name, "Knife", 1, true) then
+           and string.find(m.Name, "Knife",           1, true) then
             return true
         end
     end
@@ -200,134 +215,26 @@ runS.Heartbeat:Connect(function()
     if tick() - lastFire < getgenv().Config.FireRate then return end
     lastFire = tick()
 
-    local originPos        = desyncCF and desyncCF.Position or targetRoot.Position
-    local randomOffset     = Vector3.new(
+    local originPos = desyncCF and desyncCF.Position or targetRoot.Position
+    local randomOffset = Vector3.new(
         (math.random() - 0.5) * 0.1,
         (math.random() - 0.5) * 0.1,
         (math.random() - 0.5) * 0.1
     )
-    local aimedPos         = targetHead.Position + randomOffset
-    local aimCF            = CFrame.lookAt(originPos, targetHead.Position)
-    local objSpaceHeadOff  = targetHead.CFrame:ToObjectSpace(CFrame.new(aimedPos))
-
-    local cameradata = {}
+    local aimedPos        = targetHead.Position + randomOffset
+    local aimCF           = CFrame.lookAt(originPos, targetHead.Position)
+    local objSpaceHeadOff = targetHead.CFrame:ToObjectSpace(CFrame.new(aimedPos))
+    local cameradata      = {}
     cameradata[utf8.char(1)] = {
         [utf8.char(0)] = util:EncodeCFrame(aimCF),
         [utf8.char(1)] = util:EncodeCFrame(targetHead.CFrame),
         [utf8.char(2)] = targetHead,
         [utf8.char(3)] = util:EncodeCFrame(objSpaceHeadOff)
     }
-
     repS.Remotes.Replication.Fighter.UseItem:FireServer(
         item:Get("ObjectID"),
         enum:ToEnum("StartShooting"),
         cameradata,
         nil
     )
-end)
-
--- ─── floating toggle button ───────────────────────────────────────────────────
-local pg = lplr:WaitForChild("PlayerGui")
-
-local sg = Instance.new("ScreenGui")
-sg.Name                = "RivalsToggle"
-sg.ResetOnSpawn        = false
-sg.DisplayOrder        = 999
-sg.IgnoreGuiInset      = true
-sg.Parent              = pg
-
-local btn = Instance.new("TextButton")
-btn.Size                   = UDim2.new(0, 58, 0, 28)
-btn.AnchorPoint            = Vector2.new(0, 0)
-btn.BackgroundColor3       = Color3.fromRGB(18, 18, 18)
-btn.BackgroundTransparency = 0.25
-btn.TextColor3             = Color3.fromRGB(255, 255, 255)
-btn.Font                   = Enum.Font.GothamBold
-btn.TextSize               = 12
-btn.Text                   = "on 😐"
-btn.BorderSizePixel        = 0
-btn.AutoButtonColor        = false
-btn.ClipsDescendants       = false
-btn.Parent                 = sg
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 8)
-corner.Parent       = btn
-
--- init position bottom-left on first frame so ViewportSize is ready
-task.defer(function()
-    local vp     = workspace.CurrentCamera.ViewportSize
-    btn.Position = UDim2.new(0, 10, 0, math.floor(vp.Y * 0.5) - 14)
-end)
-
--- ─── drag state ───────────────────────────────────────────────────────────────
-local dragging    = false
-local dragInput   = nil
-local dragOrigin  = nil
-local btnOrigin   = nil
-local DRAG_THRESH = 5
-
-local function inputPos(input)
-    return Vector2.new(input.Position.X, input.Position.Y)
-end
-
-local function isTrigger(input)
-    return input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch
-end
-
-local function isMoveType(input)
-    return input.UserInputType == Enum.UserInputType.MouseMovement
-        or input.UserInputType == Enum.UserInputType.Touch
-end
-
-local function applyState()
-    if getgenv().Config.Enabled then
-        btn.Text             = "on 😐"
-        btn.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
-    else
-        btn.Text             = "off 😁"
-        btn.BackgroundColor3 = Color3.fromRGB(45, 12, 12)
-    end
-end
-
-btn.InputBegan:Connect(function(input)
-    if not isTrigger(input) then return end
-    dragging   = true
-    dragInput  = input
-    dragOrigin = inputPos(input)
-    local abs  = btn.AbsolutePosition
-    btn.Position = UDim2.new(0, abs.X, 0, abs.Y)
-    btnOrigin  = btn.Position
-end)
-
-uis.InputChanged:Connect(function(input)
-    if not dragging then return end
-    if not isMoveType(input) then return end
-    if input.UserInputType == Enum.UserInputType.Touch
-    and dragInput and input ~= dragInput then return end
-
-    local delta = inputPos(input) - dragOrigin
-    if delta.Magnitude < DRAG_THRESH then return end
-
-    local vp   = workspace.CurrentCamera.ViewportSize
-    local newX = math.clamp(btnOrigin.X.Offset + delta.X, 0, vp.X - btn.AbsoluteSize.X)
-    local newY = math.clamp(btnOrigin.Y.Offset + delta.Y, 0, vp.Y - btn.AbsoluteSize.Y)
-    btn.Position = UDim2.new(0, newX, 0, newY)
-end)
-
-uis.InputEnded:Connect(function(input)
-    if not dragging then return end
-    if not isTrigger(input) then return end
-    if input.UserInputType == Enum.UserInputType.Touch
-    and dragInput and input ~= dragInput then return end
-
-    local delta = (inputPos(input) - dragOrigin).Magnitude
-    if delta < DRAG_THRESH then
-        getgenv().Config.Enabled = not getgenv().Config.Enabled
-        applyState()
-    end
-
-    dragging  = false
-    dragInput = nil
 end)
