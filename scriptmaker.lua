@@ -1,459 +1,521 @@
--- ─────────────────────────────────────────────────────────────
--- FETCH THE OFFICIAL LIBRARY & PATCH FOR MOBILE TOUCH
--- ─────────────────────────────────────────────────────────────
-local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
-local source = game:HttpGet(repo .. 'Library.lua')
+--// [K]vk Executor UI — Roblox
+--// PC: RightShift to toggle | Mobile: draggable float button
+--// Anti-cheat: protect_gui + gethui + randomized instance names
 
--- 1. Inject touch tracking (Global so the library can read it)
-local trackingCode = [[
-_G.isTouching = false
-game:GetService('UserInputService').InputBegan:Connect(function(i) 
-    if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then _G.isTouching = true end 
-end)
-game:GetService('UserInputService').InputEnded:Connect(function(i) 
-    if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then _G.isTouching = false end 
-end)
-]]
-source = trackingCode .. "\n" .. source
+local UIS        = game:GetService("UserInputService")
+local TweenSvc   = game:GetService("TweenService")
+local Players    = game:GetService("Players")
+local CoreGui    = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
 
--- 2. Patch mouse held-down checks to our global tracker
-source = source:gsub("InputService:IsMouseButtonPressed%(Enum%.UserInputType%.MouseButton1%)", "_G.isTouching")
+local LP = Players.LocalPlayer
+local ENV = getfenv and getfenv() or _ENV
 
--- 3. Patch strict mouse clicks to accept Touch
-source = source:gsub("Input%.UserInputType == Enum%.UserInputType%.MouseButton1", "(Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch)")
-source = source:gsub("Input%.UserInputType ~= Enum%.UserInputType%.MouseButton1", "(Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch)")
-
--- 4. Patch mouse position for dragging and sliders
-source = source:gsub("Mouse%.X", "game:GetService('UserInputService'):GetMouseLocation().X")
-source = source:gsub("Mouse%.Y", "game:GetService('UserInputService'):GetMouseLocation().Y")
-
-local Library = loadstring(source)()
-local UserInputService = game:GetService('UserInputService')
-
--- ─────────────────────────────────────────────────────────────
--- UI SETUP (Wider & Longer)
--- ─────────────────────────────────────────────────────────────
-local Window = Library:CreateWindow({
-    Title        = 'Menu',
-    Center       = true,
-    AutoShow     = true,
-    TabPadding   = 4, 
-    MenuFadeTime = 0.1,
-    Size         = UDim2.fromOffset(660, 400) -- Wider + longer
-})
-
--- Instantly disable the blue selection outline
-local function RemoveBlueOutline(obj)
-    if obj:IsA("GuiButton") then
-        obj.Selectable = false
-    end
+--// ─── executor funcs with fallbacks ──────────────────────────────
+local function pick(...)
+    for _, v in ipairs({...}) do if v then return v end end
 end
 
-for _, obj in pairs(Library.ScreenGui:GetDescendants()) do
-    RemoveBlueOutline(obj)
-end
-Library.ScreenGui.DescendantAdded:Connect(RemoveBlueOutline)
+local loadstr  = ENV.loadstring or loadstring
+local protect  = pick(ENV.protect_gui, syn and syn.protect_gui, protect_gui)
+local gethui   = pick(ENV.gethui, gethui)
+local setclip  = pick(ENV.setclipboard, ENV.toclipboard, setclipboard)
+local getclip  = pick(ENV.getclipboard, getclipboard)
 
--- Global UI scale object (used by the scaler below)
-local uiScale = Instance.new('UIScale')
-uiScale.Scale = 0.75
-uiScale.Parent = Library.ScreenGui
-
--- ─────────────────────────────────────────────────────────────
--- 🛠️ CUSTOM EXTERNAL TOGGLE BUTTON
--- ─────────────────────────────────────────────────────────────
-local ToggleGui = Instance.new("ScreenGui")
-ToggleGui.Name = "CustomToggleGui"
-ToggleGui.ResetOnSpawn = false
-ToggleGui.IgnoreGuiInset = true
-ToggleGui.DisplayOrder = 999
-local protect = syn and syn.protect_gui or (function(gui) gui.Parent = game:GetService("CoreGui") end)
-protect(ToggleGui)
-
--- Outer Frame (Black border)
-local BtnOuter = Instance.new("Frame")
-BtnOuter.Name = "ToggleBtnOuter"
-BtnOuter.Parent = ToggleGui
-BtnOuter.Size = UDim2.fromOffset(56, 20)
-BtnOuter.Position = UDim2.new(0, 15, 0.35, 0)
-BtnOuter.BackgroundColor3 = Color3.new(0, 0, 0)
-BtnOuter.BorderColor3 = Color3.new(0, 0, 0)
-
--- Inner Frame (Matches UI exact style)
-local BtnInner = Instance.new("Frame")
-BtnInner.Name = "ToggleBtnInner"
-BtnInner.Parent = BtnOuter
-BtnInner.Size = UDim2.new(1, 0, 1, 0)
-BtnInner.BackgroundColor3 = Library.MainColor
-BtnInner.BorderColor3 = Library.OutlineColor
-BtnInner.BorderMode = Enum.BorderMode.Inset
-
--- UI Gradient
-local BtnGradient = Instance.new("UIGradient")
-BtnGradient.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(212, 212, 212))
-})
-BtnGradient.Rotation = 90
-BtnGradient.Parent = BtnInner
-
--- Clickable Area
-local ToggleBtn = Instance.new("TextButton")
-ToggleBtn.Name = "ToggleBtn"
-ToggleBtn.Parent = BtnInner
-ToggleBtn.Size = UDim2.new(1, 0, 1, 0)
-ToggleBtn.BackgroundTransparency = 1
-ToggleBtn.TextColor3 = Library.FontColor
-ToggleBtn.Font = Library.Font
-ToggleBtn.TextSize = 13
-ToggleBtn.Text = "Close"
-ToggleBtn.AutoButtonColor = false
-ToggleBtn.Selectable = false
-ToggleBtn.Active = true
-
--- Button Logic
-local isUIVisible = true
-ToggleBtn.MouseButton1Click:Connect(function()
-    isUIVisible = not isUIVisible
-    ToggleBtn.Text = isUIVisible and "Close" or "Toggle"
-    Library:Toggle()
-end)
-
--- ─────────────────────────────────────────────────────────────
--- 🎚️ COOL SCALER — sits right under the title bar
--- ─────────────────────────────────────────────────────────────
-local MIN_SCALE, MAX_SCALE = 0.5, 1.4
-local ACCENT = Library.AccentColor or Color3.fromRGB(0, 200, 120)
-local FONT   = Library.FontColor or Color3.fromRGB(240, 240, 240)
-
--- Push the tab content down so the scaler has its own row
-local TabContainer = Library.MainFrame:FindFirstChild('TabContainer')
-if TabContainer then
-    TabContainer.Position = UDim2.new(0, 3, 0, 56)
-    TabContainer.Size     = UDim2.new(1, -6, 1, -60)
+--// ─── random name generator (avoid signature detection) ──────────
+local CH = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+local function rname(n)
+    n = n or math.random(14, 22)
+    local t = {}
+    for i = 1, n do
+        local k = math.random(1, #CH)
+        t[i] = CH:sub(k, k)
+    end
+    return table.concat(t)
 end
 
-local ScalerBar = Instance.new('Frame')
-ScalerBar.Name = 'ScalerBar'
-ScalerBar.Parent = Library.MainFrame
-ScalerBar.Position = UDim2.new(0, 3, 0, 30)
-ScalerBar.Size = UDim2.new(1, -6, 0, 24)
-ScalerBar.BackgroundColor3 = Library.MainColor
-ScalerBar.BorderColor3 = Library.OutlineColor
-ScalerBar.BorderMode = Enum.BorderMode.Inset
-ScalerBar.ZIndex = 2
-
-local barGrad = Instance.new('UIGradient')
-barGrad.Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(218, 218, 218))
-barGrad.Rotation = 90
-barGrad.Parent = ScalerBar
-
--- "SCALE" tag
-local ScaleLabel = Instance.new('TextLabel')
-ScaleLabel.Parent = ScalerBar
-ScaleLabel.BackgroundTransparency = 1
-ScaleLabel.Position = UDim2.new(0, 8, 0, 0)
-ScaleLabel.Size = UDim2.new(0, 42, 1, 0)
-ScaleLabel.Font = Enum.Font.Code
-ScaleLabel.Text = 'SCALE'
-ScaleLabel.TextSize = 10
-ScaleLabel.TextXAlignment = Enum.TextXAlignment.Left
-ScaleLabel.TextColor3 = FONT
-ScaleLabel.TextTransparency = 0.35
-ScaleLabel.ZIndex = 3
-
--- Slider track
-local Track = Instance.new('Frame')
-Track.Parent = ScalerBar
-Track.Position = UDim2.new(0, 92, 0, 9)
-Track.Size = UDim2.new(1, -144, 0, 6)
-Track.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
-Track.BorderSizePixel = 0
-Track.ZIndex = 2
-local trackCorner = Instance.new('UICorner')
-trackCorner.CornerRadius = UDim.new(1, 0)
-trackCorner.Parent = Track
-
--- Slider fill (gradient)
-local Fill = Instance.new('Frame')
-Fill.Parent = Track
-Fill.Size = UDim2.new(0.5, 0, 1, 0)
-Fill.BackgroundColor3 = Color3.new(1, 1, 1)
-Fill.BorderSizePixel = 0
-local fillCorner = Instance.new('UICorner')
-fillCorner.CornerRadius = UDim.new(1, 0)
-fillCorner.Parent = Fill
-local fillGrad = Instance.new('UIGradient')
-fillGrad.Color = ColorSequence.new(ACCENT, ACCENT:Lerp(Color3.new(1, 1, 1), 0.55))
-fillGrad.Rotation = 0
-fillGrad.Parent = Fill
-
--- Soft glow behind the knob
-local Glow = Instance.new('Frame')
-Glow.Parent = ScalerBar
-Glow.Size = UDim2.fromOffset(20, 20)
-Glow.BackgroundColor3 = ACCENT
-Glow.BackgroundTransparency = 0.78
-Glow.BorderSizePixel = 0
-Glow.Position = UDim2.new(0.5, -10, 0, 2)
-Glow.ZIndex = 3
-local glowCorner = Instance.new('UICorner')
-glowCorner.CornerRadius = UDim.new(1, 0)
-glowCorner.Parent = Glow
-
--- Knob
-local Knob = Instance.new('Frame')
-Knob.Parent = ScalerBar
-Knob.Size = UDim2.fromOffset(12, 12)
-Knob.Position = UDim2.new(0.5, -6, 0, 6)
-Knob.BackgroundColor3 = Color3.new(1, 1, 1)
-Knob.BorderSizePixel = 0
-Knob.ZIndex = 4
-local knobCorner = Instance.new('UICorner')
-knobCorner.CornerRadius = UDim.new(1, 0)
-knobCorner.Parent = Knob
-local knobStroke = Instance.new('UIStroke')
-knobStroke.Color = ACCENT
-knobStroke.Thickness = 1.5
-knobStroke.Parent = Knob
-
--- Percentage readout (click it to reset to 100%)
-local PercentBtn = Instance.new('TextButton')
-PercentBtn.Parent = ScalerBar
-PercentBtn.Position = UDim2.new(1, -48, 0, 0)
-PercentBtn.Size = UDim2.new(0, 44, 1, 0)
-PercentBtn.BackgroundTransparency = 1
-PercentBtn.Font = Enum.Font.Code
-PercentBtn.TextSize = 11
-PercentBtn.Text = '75%'
-PercentBtn.TextXAlignment = Enum.TextXAlignment.Right
-PercentBtn.TextColor3 = FONT
-PercentBtn.AutoButtonColor = false
-PercentBtn.Selectable = false
-PercentBtn.ZIndex = 4
-
--- Invisible, taller hit area so it's easy to grab on mobile
-local HitArea = Instance.new('Frame')
-HitArea.Parent = ScalerBar
-HitArea.Position = UDim2.new(0, 92, 0, 2)
-HitArea.Size = UDim2.new(1, -144, 0, 20)
-HitArea.BackgroundTransparency = 1
-HitArea.ZIndex = 5
-HitArea.Active = true
-
--- ── SetScale ────────────────────────────────────────────────
-local function SetScale(value)
-    value = math.clamp(value, MIN_SCALE, MAX_SCALE)
-    uiScale.Scale = value
-
-    local alpha = (value - MIN_SCALE) / (MAX_SCALE - MIN_SCALE)
-    Fill.Size     = UDim2.new(alpha, 0, 1, 0)
-    Glow.Position = UDim2.new(alpha, -10, 0, 2)
-    Knob.Position = UDim2.new(alpha, -6, 0, 6)
-    PercentBtn.Text = tostring(math.floor(value * 100 + 0.5)) .. '%'
+--// ─── parent for the GUI ─────────────────────────────────────────
+local function getSafeParent()
+    if gethui then
+        local ok, h = pcall(gethui)
+        if ok and h then return h end
+    end
+    local ok, cg = pcall(function() return CoreGui end)
+    if ok and cg then return cg end
+    return LP:WaitForChild("PlayerGui")
 end
 
--- ── − / + step buttons ──────────────────────────────────────
-local function MakeStepButton(text, xOffset, delta)
-    local btn = Instance.new('TextButton')
-    btn.Parent = ScalerBar
-    btn.Position = UDim2.new(0, xOffset, 0, 4)
-    btn.Size = UDim2.fromOffset(16, 16)
-    btn.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-    btn.BackgroundTransparency = 0.25
-    btn.BorderSizePixel = 0
-    btn.Text = text
-    btn.Font = Enum.Font.Code
-    btn.TextSize = 14
-    btn.TextColor3 = FONT
-    btn.AutoButtonColor = false
-    btn.Selectable = false
-    btn.Active = true
-    btn.ZIndex = 4
+local PARENT = getSafeParent()
 
-    local c = Instance.new('UICorner')
-    c.CornerRadius = UDim.new(0, 4)
-    c.Parent = btn
+--// ─── ScreenGui ──────────────────────────────────────────────────
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name              = rname()
+ScreenGui.ResetOnSpawn      = false
+ScreenGui.IgnoreGuiInset    = true
+ScreenGui.ZIndexBehavior    = Enum.ZIndexBehavior.Sibling
+ScreenGui.DisplayOrder      = 999999
+ScreenGui.Enabled           = true
 
-    local s = Instance.new('UIStroke')
-    s.Color = Library.OutlineColor
-    s.Thickness = 1
-    s.Parent = btn
+if protect then pcall(protect, ScreenGui) end
+ScreenGui.Parent = PARENT
 
-    btn.MouseEnter:Connect(function()
-        btn.BackgroundTransparency = 0
-        btn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-    end)
-    btn.MouseLeave:Connect(function()
-        btn.BackgroundTransparency = 0.25
-        btn.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-    end)
-    btn.MouseButton1Click:Connect(function()
-        SetScale(uiScale.Scale + delta)
-    end)
-    return btn
+--// ─── screen / device detection ──────────────────────────────────
+local isMobile = UIS.TouchEnabled and not UIS.KeyboardEnabled
+local cam = workspace.CurrentCamera
+local function vp()
+    if cam then return cam.ViewportSize end
+    return Vector2.new(1920, 1080)
 end
 
-MakeStepButton('-', 50, -0.05)
-MakeStepButton('+', 68,  0.05)
-
-PercentBtn.MouseButton1Click:Connect(function()
-    SetScale(1)
-end)
-
--- ── Drag logic ──────────────────────────────────────────────
-local draggingScaler = false
-local dragStartX, dragStartScale, dragTrackWidth = 0, 1, 1
-
-local function GetPointerX(input)
-    if input and input.UserInputType == Enum.UserInputType.Touch then
-        return input.Position.X
-    end
-    return UserInputService:GetMouseLocation().X
-end
-
-HitArea.InputBegan:Connect(function(input)
-    if input.UserInputType ~= Enum.UserInputType.MouseButton1
-    and input.UserInputType ~= Enum.UserInputType.Touch then return end
-
-    dragTrackWidth = math.max(Track.AbsoluteSize.X, 1)
-    dragStartX = GetPointerX(input)
-
-    -- jump straight to the clicked position
-    local relX = math.clamp((dragStartX - Track.AbsolutePosition.X) / dragTrackWidth, 0, 1)
-    SetScale(MIN_SCALE + relX * (MAX_SCALE - MIN_SCALE))
-
-    dragStartScale = uiScale.Scale
-    draggingScaler = true
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if not draggingScaler then return end
-    if input.UserInputType == Enum.UserInputType.MouseMovement
-    or input.UserInputType == Enum.UserInputType.Touch then
-        local delta = GetPointerX(input) - dragStartX
-        SetScale(dragStartScale + (delta / dragTrackWidth) * (MAX_SCALE - MIN_SCALE))
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
-        draggingScaler = false
-    end
-end)
-
--- Initial value
-SetScale(0.75)
-
--- ─────────────────────────────────────────────────────────────
--- 🛠️ COOL RESIZER (Bottom Right)
--- ─────────────────────────────────────────────────────────────
-local Resizer = Instance.new("TextButton")
-Resizer.Name = "WindowResizer"
-Resizer.Parent = Library.MainFrame
-Resizer.AnchorPoint = Vector2.new(1, 1)
-Resizer.Position = UDim2.new(1, -3, 1, -3)
-Resizer.Size = UDim2.fromOffset(16, 16)
-Resizer.BackgroundTransparency = 1
-Resizer.Text = "◢"
-Resizer.TextColor3 = Library.OutlineColor
-Resizer.TextSize = 14
-Resizer.Font = Enum.Font.Code
-Resizer.Selectable = false
-Resizer.Active = true
-Resizer.ZIndex = 10
-
-local resizing = false
-local startSize
-local startPos
-
-Resizer.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        resizing = true
-        startSize = Library.MainFrame.Size
-        startPos = input.Position
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - startPos
-        local scale = math.max(uiScale.Scale, 0.1)
-        local newWidth  = math.clamp(startSize.X.Offset + (delta.X / scale), 420, 1100)
-        local newHeight = math.clamp(startSize.Y.Offset + (delta.Y / scale), 280, 1000)
-        Library.MainFrame.Size = UDim2.fromOffset(newWidth, newHeight)
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        resizing = false
-    end
-end)
-
--- ─────────────────────────────────────────────────────────────
--- BUILD YOUR MENU
--- ─────────────────────────────────────────────────────────────
-local Tabs = {
-    Main     = Window:AddTab('Main'),
-    Settings = Window:AddTab('Settings'),
+--// ─── color theme ────────────────────────────────────────────────
+local C = {
+    bg      = Color3.fromRGB(18, 18, 22),
+    panel   = Color3.fromRGB(26, 26, 32),
+    sub     = Color3.fromRGB(36, 36, 44),
+    stroke  = Color3.fromRGB(58, 58, 70),
+    accent  = Color3.fromRGB(94, 124, 255),
+    accent2 = Color3.fromRGB(130, 155, 255),
+    text    = Color3.fromRGB(232, 232, 240),
+    dim     = Color3.fromRGB(150, 150, 165),
+    ok      = Color3.fromRGB(90, 210, 130),
+    err     = Color3.fromRGB(240, 90, 100),
+    warn    = Color3.fromRGB(240, 190, 90),
 }
 
-local LeftGroup  = Tabs.Main:AddLeftGroupbox('Features')
-local RightGroup = Tabs.Main:AddRightGroupbox('Values')
+--// ─── helpers ────────────────────────────────────────────────────
+local function corner(obj, r)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, r or 8)
+    c.Parent = obj
+end
 
--- LEFT SIDE
-LeftGroup:AddToggle('MyToggle', {
-    Text    = 'Enable feature',
-    Default = true,
-})
+local function stroke(obj, col, th)
+    local s = Instance.new("UIStroke")
+    s.Color = col or C.stroke
+    s.Thickness = th or 1
+    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    s.Parent = obj
+end
 
-LeftGroup:AddButton({
-    Text = 'Click me',
-    Func = function() Library:Notify('Button clicked!') end,
-}):AddButton({
-    Text = 'Sub button',
-    Func = function() Library:Notify('Sub clicked!') end,
-})
+local function padding(obj, p)
+    local u = Instance.new("UIPadding")
+    local v = UDim.new(0, p)
+    u.PaddingTop, u.PaddingBottom = v, v
+    u.PaddingLeft, u.PaddingRight = v, v
+    u.Parent = obj
+end
 
-LeftGroup:AddLabel('Keybind'):AddKeyPicker('MyKey', {
-    Default = 'MB2',
-    Mode    = 'Toggle',
-    Text    = 'Example keybind'
-})
+--// ─── drag system (works mouse + touch) ──────────────────────────
+local function makeDraggable(frame, handle)
+    handle = handle or frame
+    local dragging, dragStart, startPos
 
--- RIGHT SIDE
-RightGroup:AddSlider('MySlider', {
-    Text = 'Slider value',
-    Default = 50, Min = 0, Max = 100, Rounding = 0,
-})
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging   = true
+            dragStart  = input.Position
+            startPos   = frame.Position
+        end
+    end)
 
-RightGroup:AddDropdown('MyDropdown', {
-    Values  = {'Option A', 'Option B', 'Option C'},
-    Default = 1,
-    Text    = 'Choose option',
-})
+    handle.InputChanged:Connect(function(input)
+        if not dragging then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
 
-RightGroup:AddInput('MyInput', {
-    Default     = '',
-    Text        = 'Textbox',
-    Placeholder = 'Type here...',
-})
+    UIS.InputChanged:Connect(function(input)
+        if not dragging then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
 
-RightGroup:AddLabel('Color'):AddColorPicker('MyColor', {
-    Default = Color3.fromRGB(0, 200, 120),
-    Title   = 'Pick a color'
-})
+    UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+end
 
--- SETTINGS TAB
-local MenuGroup = Tabs.Settings:AddLeftGroupbox('Menu')
-MenuGroup:AddButton('Unload', function() 
-    ToggleGui:Destroy()
-    Library:Unload() 
+--// ─── main window ────────────────────────────────────────────────
+local mobileW, mobileH = 0.85, 0.6
+local pcW, pcH = 620, 460
+
+local Main = Instance.new("Frame")
+Main.Name = rname()
+Main.Parent = ScreenGui
+Main.AnchorPoint = Vector2.new(0.5, 0.5)
+Main.Position = UDim2.new(0.5, 0, 0.5, 0)
+Main.BackgroundColor3 = C.bg
+Main.BorderSizePixel = 0
+Main.ClipsDescendants = true
+Main.Visible = false
+corner(Main, 10)
+stroke(Main, C.stroke, 1)
+
+if isMobile then
+    Main.Size = UDim2.new(mobileW, 0, mobileH, 0)
+else
+    Main.Size = UDim2.fromOffset(pcW, pcH)
+end
+
+--// top bar
+local TopBar = Instance.new("Frame")
+TopBar.Name = rname()
+TopBar.Parent = Main
+TopBar.Size = UDim2.new(1, 0, 0, 34)
+TopBar.BackgroundColor3 = C.panel
+TopBar.BorderSizePixel = 0
+corner(TopBar, 10)
+
+-- patch bottom corners of topbar (only top corners rounded)
+local TopBarCover = Instance.new("Frame")
+TopBarCover.Parent = TopBar
+TopBarCover.Position = UDim2.new(0, 0, 1, -8)
+TopBarCover.Size = UDim2.new(1, 0, 0, 8)
+TopBarCover.BackgroundColor3 = C.panel
+TopBarCover.BorderSizePixel = 0
+
+local Title = Instance.new("TextLabel")
+Title.Parent = TopBar
+Title.BackgroundTransparency = 1
+Title.Position = UDim2.new(0, 14, 0, 0)
+Title.Size = UDim2.new(1, -80, 1, 0)
+Title.Font = Enum.Font.GothamMedium
+Title.Text = "[K]vk executor"
+Title.TextSize = 14
+Title.TextColor3 = C.text
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Parent = TopBar
+CloseBtn.AnchorPoint = Vector2.new(1, 0.5)
+CloseBtn.Position = UDim2.new(1, -8, 0.5, 0)
+CloseBtn.Size = UDim2.fromOffset(24, 24)
+CloseBtn.BackgroundColor3 = C.sub
+CloseBtn.BorderSizePixel = 0
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.Text = "×"
+CloseBtn.TextSize = 16
+CloseBtn.TextColor3 = C.text
+CloseBtn.AutoButtonColor = false
+corner(CloseBtn, 6)
+
+CloseBtn.MouseEnter:Connect(function()
+    TweenSvc:Create(CloseBtn, TweenInfo.new(0.15), {BackgroundColor3 = C.err}):Play()
+end)
+CloseBtn.MouseLeave:Connect(function()
+    TweenSvc:Create(CloseBtn, TweenInfo.new(0.15), {BackgroundColor3 = C.sub}):Play()
+end)
+CloseBtn.MouseButton1Click:Connect(function()
+    Main.Visible = false
 end)
 
-MenuGroup:AddLabel('Menu bind'):AddKeyPicker('MenuKeybind', {
-    Default = 'End', NoUI = true, Text = 'Menu keybind'
-})
-Library.ToggleKeybind = Options.MenuKeybind
+makeDraggable(Main, TopBar)
+
+--// ─── tab bar ────────────────────────────────────────────────────
+local TabBar = Instance.new("Frame")
+TabBar.Parent = Main
+TabBar.Position = UDim2.new(0, 10, 0, 42)
+TabBar.Size = UDim2.new(1, -20, 0, 28)
+TabBar.BackgroundTransparency = 1
+
+local function makeTab(text, x, w)
+    local t = Instance.new("TextButton")
+    t.Parent = TabBar
+    t.Position = UDim2.new(0, x, 0, 0)
+    t.Size = UDim2.new(0, w, 1, 0)
+    t.BackgroundColor3 = C.sub
+    t.BorderSizePixel = 0
+    t.Font = Enum.Font.GothamMedium
+    t.Text = text
+    t.TextSize = 12
+    t.TextColor3 = C.text
+    t.AutoButtonColor = false
+    corner(t, 6)
+    return t
+end
+
+local TabExec = makeTab("execute", 0, 80)
+local TabOut  = makeTab("console", 88, 80)
+
+local function selectTab(which)
+    local active, inactive = (which == "exec") and TabExec or TabOut,
+                             (which == "exec") and TabOut  or TabExec
+    active.BackgroundColor3 = C.accent
+    inactive.BackgroundColor3 = C.sub
+end
+
+--// ─── editor area ────────────────────────────────────────────────
+local EditorFrame = Instance.new("Frame")
+EditorFrame.Parent = Main
+EditorFrame.Position = UDim2.new(0, 10, 0, 78)
+EditorFrame.Size = UDim2.new(1, -20, 1, -140)
+EditorFrame.BackgroundColor3 = C.panel
+EditorFrame.BorderSizePixel = 0
+corner(EditorFrame, 8)
+stroke(EditorFrame, C.stroke, 1)
+
+local Editor = Instance.new("TextBox")
+Editor.Parent = EditorFrame
+Editor.BackgroundTransparency = 1
+Editor.Position = UDim2.new(0, 8, 0, 8)
+Editor.Size = UDim2.new(1, -16, 1, -16)
+Editor.Font = Enum.Font.Code
+Editor.Text = "-- paste or loadstring your script here\n-- example: print(\"hello roblox\")"
+Editor.PlaceholderText = "paste or loadstring your script here"
+Editor.TextSize = isMobile and 13 or 14
+Editor.TextColor3 = C.text
+Editor.PlaceholderColor3 = C.dim
+Editor.TextXAlignment = Enum.TextXAlignment.Left
+Editor.TextYAlignment = Enum.TextYAlignment.Top
+Editor.TextWrapped = true
+Editor.MultiLine = true
+Editor.ClearTextOnFocus = false
+Editor.TextEditable = true
+
+--// ─── console area ───────────────────────────────────────────────
+local ConsoleFrame = Instance.new("Frame")
+ConsoleFrame.Parent = Main
+ConsoleFrame.Position = EditorFrame.Position
+ConsoleFrame.Size = EditorFrame.Size
+ConsoleFrame.BackgroundColor3 = C.panel
+ConsoleFrame.BorderSizePixel = 0
+ConsoleFrame.Visible = false
+corner(ConsoleFrame, 8)
+stroke(ConsoleFrame, C.stroke, 1)
+
+local ConsoleScroll = Instance.new("ScrollingFrame")
+ConsoleScroll.Parent = ConsoleFrame
+ConsoleScroll.BackgroundTransparency = 1
+ConsoleScroll.Position = UDim2.new(0, 8, 0, 8)
+ConsoleScroll.Size = UDim2.new(1, -16, 1, -16)
+ConsoleScroll.BorderSizePixel = 0
+ConsoleScroll.ScrollBarThickness = 6
+ConsoleScroll.ScrollBarImageColor3 = C.accent
+ConsoleScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+ConsoleScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+
+local ConsoleLayout = Instance.new("UIListLayout")
+ConsoleLayout.Parent = ConsoleScroll
+ConsoleLayout.Padding = UDim.new(0, 4)
+ConsoleLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local consoleLines = {}
+
+local function logLine(text, color)
+    color = color or C.text
+    local lbl = Instance.new("TextLabel")
+    lbl.Parent = ConsoleScroll
+    lbl.BackgroundTransparency = 1
+    lbl.Size = UDim2.new(1, 0, 0, 0)
+    lbl.AutomaticSize = Enum.AutomaticSize.Y
+    lbl.Font = Enum.Font.Code
+    lbl.TextSize = 12
+    lbl.TextColor3 = color
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.TextYAlignment = Enum.TextYAlignment.Top
+    lbl.TextWrapped = true
+    lbl.Text = text
+    table.insert(consoleLines, lbl)
+    task.wait()
+    ConsoleScroll.CanvasPosition = Vector2.new(0, math.max(0, ConsoleLayout.AbsoluteContentSize.Y - ConsoleScroll.AbsoluteSize.Y))
+end
+
+local function clearConsole()
+    for _, v in ipairs(consoleLines) do v:Destroy() end
+    consoleLines = {}
+end
+
+--// ─── bottom buttons ─────────────────────────────────────────────
+local BtnRow = Instance.new("Frame")
+BtnRow.Parent = Main
+BtnRow.AnchorPoint = Vector2.new(0, 1)
+BtnRow.Position = UDim2.new(0, 10, 1, -10)
+BtnRow.Size = UDim2.new(1, -20, 0, 40)
+BtnRow.BackgroundTransparency = 1
+
+local function makeBtn(text, x, w, color)
+    local b = Instance.new("TextButton")
+    b.Parent = BtnRow
+    b.Position = UDim2.new(0, x, 0, 0)
+    b.Size = UDim2.new(0, w, 1, 0)
+    b.BackgroundColor3 = color or C.sub
+    b.BorderSizePixel = 0
+    b.Font = Enum.Font.GothamSemibold
+    b.Text = text
+    b.TextSize = 13
+    b.TextColor3 = C.text
+    b.AutoButtonColor = false
+    corner(b, 8)
+    b.MouseEnter:Connect(function()
+        TweenSvc:Create(b, TweenInfo.new(0.15), {BackgroundColor3 = C.accent2}):Play()
+    end)
+    b.MouseLeave:Connect(function()
+        TweenSvc:Create(b, TweenInfo.new(0.15), {BackgroundColor3 = color or C.sub}):Play()
+    end)
+    return b
+end
+
+local bW = isMobile and 92 or 110
+local ExecuteBtn = makeBtn("execute", 0, bW, C.accent)
+local ClearBtn   = makeBtn("clear", bW + 6, 84)
+local CopyBtn    = makeBtn("copy", bW + 96, 84)
+local PasteBtn   = makeBtn("paste", bW + 186, 84)
+
+--// ─── execute logic ──────────────────────────────────────────────
+local function executeCode(code)
+    if not code or code == "" then
+        logLine("[!] nothing to execute", C.warn)
+        return
+    end
+
+    if not loadstr then
+        logLine("[x] no loadstring available in this executor", C.err)
+        return
+    end
+
+    logLine("> executing...", C.dim)
+
+    local fn, err = loadstr(code)
+    if not fn then
+        logLine("[compile error] " .. tostring(err), C.err)
+        return
+    end
+
+    local ok, res = pcall(fn)
+    if ok then
+        if res ~= nil then
+            logLine("[ok] " .. tostring(res), C.ok)
+        else
+            logLine("[ok] script finished", C.ok)
+        end
+    else
+        logLine("[runtime error] " .. tostring(res), C.err)
+    end
+end
+
+ExecuteBtn.MouseButton1Click:Connect(function()
+    selectTab("out")
+    executeCode(Editor.Text)
+end)
+
+ClearBtn.MouseButton1Click:Connect(function()
+    Editor.Text = ""
+end)
+
+CopyBtn.MouseButton1Click:Connect(function()
+    if setclip then
+        pcall(setclip, Editor.Text)
+    else
+        pcall(function()
+            if setclipboard then setclipboard(Editor.Text) end
+        end)
+    end
+end)
+
+PasteBtn.MouseButton1Click:Connect(function()
+    if getclip then
+        local ok, txt = pcall(getclip)
+        if ok and txt and txt ~= "" then
+            Editor.Text = txt
+        end
+    end
+end)
+
+TabExec.MouseButton1Click:Connect(function()
+    selectTab("exec")
+    EditorFrame.Visible = true
+    ConsoleFrame.Visible = false
+end)
+
+TabOut.MouseButton1Click:Connect(function()
+    selectTab("out")
+    EditorFrame.Visible = false
+    ConsoleFrame.Visible = true
+end)
+
+selectTab("exec")
+
+--// ─── floating toggle button ─────────────────────────────────────
+local FloatBtn = Instance.new("TextButton")
+FloatBtn.Name = rname()
+FloatBtn.Parent = ScreenGui
+FloatBtn.BackgroundColor3 = C.accent
+FloatBtn.BorderSizePixel = 0
+FloatBtn.Font = Enum.Font.GothamBold
+FloatBtn.Text = "K"
+FloatBtn.TextSize = 20
+FloatBtn.TextColor3 = Color3.fromRGB(255,255,255)
+FloatBtn.AutoButtonColor = false
+FloatBtn.Visible = true
+
+local floatSize = isMobile and 52 or 44
+FloatBtn.Size = UDim2.fromOffset(floatSize, floatSize)
+FloatBtn.Position = UDim2.new(0, isMobile and 20 or 30, 0.5, 0)
+corner(FloatBtn, floatSize / 2)
+stroke(FloatBtn, C.accent2, 1)
+
+-- drag float button
+local fbDragging, fbStart, fbStartPos, fbMoved
+FloatBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
+        fbDragging = true
+        fbMoved = false
+        fbStart = input.Position
+        fbStartPos = FloatBtn.Position
+    end
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if not fbDragging then return end
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+    or input.UserInputType == Enum.UserInputType.Touch then
+        local delta = input.Position - fbStart
+        if delta.Magnitude > 4 then fbMoved = true end
+        FloatBtn.Position = UDim2.new(
+            fbStartPos.X.Scale, fbStartPos.X.Offset + delta.X,
+            fbStartPos.Y.Scale, fbStartPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
+        fbDragging = false
+    end
+end)
+
+FloatBtn.MouseButton1Click:Connect(function()
+    if fbMoved then return end
+    Main.Visible = not Main.Visible
+end)
+
+--// ─── PC: RightShift toggle ──────────────────────────────────────
+UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.RightShift then
+        Main.Visible = not Main.Visible
+    end
+end)
+
+--// ─── initial log ────────────────────────────────────────────────
+logLine("[K]vk executor ready", C.accent2)
+logLine(isMobile and "device: mobile" or "device: pc (RShift toggles ui)", C.dim)
+logLine("paste or loadstring, then hit execute", C.dim)
