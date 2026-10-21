@@ -28,7 +28,7 @@ source = source:gsub("Mouse%.Y", "game:GetService('UserInputService'):GetMouseLo
 local Library = loadstring(source)()
 
 -- ─────────────────────────────────────────────────────────────
--- UI SETUP (Wider Size)
+-- UI SETUP (Balanced Width)
 -- ─────────────────────────────────────────────────────────────
 local Window = Library:CreateWindow({
     Title        = 'Menu',
@@ -36,7 +36,7 @@ local Window = Library:CreateWindow({
     AutoShow     = true,
     TabPadding   = 4, 
     MenuFadeTime = 0.1,
-    Size         = UDim2.fromOffset(560, 300)
+    Size         = UDim2.fromOffset(520, 280) -- Balanced width
 })
 
 -- Instantly disable the blue selection outline
@@ -51,7 +51,6 @@ for _, obj in pairs(Library.ScreenGui:GetDescendants()) do
 end
 Library.ScreenGui.DescendantAdded:Connect(RemoveBlueOutline)
 
--- Scale the UI slightly
 if Library.ScreenGui then
     local uiScale = Instance.new('UIScale')
     uiScale.Scale = 0.75
@@ -59,7 +58,7 @@ if Library.ScreenGui then
 end
 
 -- ─────────────────────────────────────────────────────────────
--- 🛠️ CUSTOM EXTERNAL TOGGLE BUTTON (Matches UI Outline)
+-- 🛠️ CUSTOM EXTERNAL TOGGLE BUTTON (Perfect UI Outline Match)
 -- ─────────────────────────────────────────────────────────────
 local ToggleGui = Instance.new("ScreenGui")
 ToggleGui.Name = "CustomToggleGui"
@@ -69,26 +68,42 @@ ToggleGui.DisplayOrder = 999
 local protect = syn and syn.protect_gui or (function(gui) gui.Parent = game:GetService("CoreGui") end)
 protect(ToggleGui)
 
--- Outer Frame (Creates the black border like the UI)
+-- Outer Frame (Black border)
 local BtnOuter = Instance.new("Frame")
 BtnOuter.Name = "ToggleBtnOuter"
 BtnOuter.Parent = ToggleGui
-BtnOuter.Size = UDim2.fromOffset(70, 24) -- Smaller button
+BtnOuter.Size = UDim2.fromOffset(56, 20) -- Even smaller
 BtnOuter.Position = UDim2.new(0, 15, 0.35, 0)
 BtnOuter.BackgroundColor3 = Color3.new(0, 0, 0)
 BtnOuter.BorderColor3 = Color3.new(0, 0, 0)
 
--- Inner TextButton (The actual clickable part with the UI colors)
+-- Inner Frame (Main Color + Outline Color + Inset)
+local BtnInner = Instance.new("Frame")
+BtnInner.Name = "ToggleBtnInner"
+BtnInner.Parent = BtnOuter
+BtnInner.Size = UDim2.new(1, 0, 1, 0)
+BtnInner.BackgroundColor3 = Library.MainColor
+BtnInner.BorderColor3 = Library.OutlineColor
+BtnInner.BorderMode = Enum.BorderMode.Inset
+
+-- The cool gradient the UI uses
+local BtnGradient = Instance.new("UIGradient")
+BtnGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(212, 212, 212))
+})
+BtnGradient.Rotation = 90
+BtnGradient.Parent = BtnInner
+
+-- Clickable TextButton (Transparent overlay for clicking)
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Name = "ToggleBtn"
-ToggleBtn.Parent = BtnOuter
+ToggleBtn.Parent = BtnInner
 ToggleBtn.Size = UDim2.new(1, 0, 1, 0)
-ToggleBtn.BackgroundColor3 = Library.MainColor
-ToggleBtn.BorderColor3 = Library.OutlineColor
-ToggleBtn.BorderMode = Enum.BorderMode.Inset
+ToggleBtn.BackgroundTransparency = 1
 ToggleBtn.TextColor3 = Library.FontColor
 ToggleBtn.Font = Library.Font
-ToggleBtn.TextSize = 14
+ToggleBtn.TextSize = 13
 ToggleBtn.Text = "Close"
 ToggleBtn.AutoButtonColor = false
 ToggleBtn.Selectable = false
@@ -98,14 +113,55 @@ ToggleBtn.Active = true
 local isUIVisible = true
 ToggleBtn.MouseButton1Click:Connect(function()
     isUIVisible = not isUIVisible
-    
-    if isUIVisible then
-        ToggleBtn.Text = "Close"
-    else
-        ToggleBtn.Text = "Toggle"
-    end
-    
+    ToggleBtn.Text = isUIVisible and "Close" or "Toggle"
     Library:Toggle()
+end)
+
+-- ─────────────────────────────────────────────────────────────
+-- 🛠️ COOL RESIZER (Bottom Right)
+-- ─────────────────────────────────────────────────────────────
+local Resizer = Instance.new("TextButton")
+Resizer.Name = "WindowResizer"
+Resizer.Parent = Library.MainFrame
+Resizer.AnchorPoint = Vector2.new(1, 1)
+Resizer.Position = UDim2.new(1, -3, 1, -3)
+Resizer.Size = UDim2.fromOffset(16, 16)
+Resizer.BackgroundTransparency = 1
+Resizer.Text = "◢" -- Cool diagonal drag indicator
+Resizer.TextColor3 = Library.OutlineColor
+Resizer.TextSize = 14
+Resizer.Font = Enum.Font.Code
+Resizer.Selectable = false
+Resizer.Active = true
+
+-- Resizer Logic (Allows dragging to scale)
+local UserInputService = game:GetService("UserInputService")
+local resizing = false
+local startSize
+local startPos
+
+Resizer.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        resizing = true
+        startSize = Library.MainFrame.Size
+        startPos = input.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - startPos
+        -- Multiply by 2 because the window is centered (expands in both directions)
+        local newWidth = math.clamp(startSize.X.Offset + (delta.X * 2), 300, 1000)
+        local newHeight = math.clamp(startSize.Y.Offset + (delta.Y * 2), 200, 1000)
+        Library.MainFrame.Size = UDim2.fromOffset(newWidth, newHeight)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        resizing = false
+    end
 end)
 
 -- ─────────────────────────────────────────────────────────────
