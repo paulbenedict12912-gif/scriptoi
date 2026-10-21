@@ -1,97 +1,54 @@
--- Mobile-optimized LinoriaLib example (touch support + compact UI)
+-- Compact & Mobile-Optimized LinoriaLib
 local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
 
-local Library     = loadstring(game:HttpGet(repo .. 'Library.lua'))()
+local Library      = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
 local SaveManager  = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 
 local UserInputService = game:GetService('UserInputService')
 local isMobile = UserInputService.TouchEnabled
 
+-- 1. Make the base window smaller
 local Window = Library:CreateWindow({
-    Title        = 'Example Menu',
+    Title        = 'Menu',
     Center       = true,
     AutoShow     = true,
-    TabPadding   = 6,          -- tighter tabs
-    MenuFadeTime = 0.2,
+    TabPadding   = 4, 
+    MenuFadeTime = 0.1,
+    Size         = UDim2.fromOffset(480, 320) -- Smaller, compact base size
 })
 
--- ─────────────────────────────────────────────────────────────
--- MOBILE SUPPORT: auto-fit scaling + touch dragging
--- ─────────────────────────────────────────────────────────────
+-- 2. Fix Touch & Clicking issues: Apply a UI Scale so it fits
 if isMobile and Library.MainFrame then
-    local frame    = Library.MainFrame
-    local viewport = workspace.CurrentCamera.ViewportSize
-
-    -- 1) Auto-scale to fit viewport (max 85% of screen)
-    local sizeX = frame.Size.X.Scale * viewport.X + frame.Size.X.Offset
-    local sizeY = frame.Size.Y.Scale * viewport.Y + frame.Size.Y.Offset
-    local scale = math.min(
-        (viewport.X * 0.85) / sizeX,
-        (viewport.Y * 0.85) / sizeY,
-        1
-    )
-    if scale < 0.99 then
-        local uiScale    = Instance.new('UIScale')
-        uiScale.Scale    = scale
-        uiScale.Parent   = frame
-    end
-
-    -- 2) Touch drag support (top ~12% of frame = title bar)
-    local dragging, dragStart, startPos
-
-    frame.InputBegan:Connect(function(input, processed)
-        if processed then return end
-        if input.UserInputType ~= Enum.UserInputType.Touch then return end
-        if UserInputService:GetFocusedTextBox() then return end
-
-        local relY = (input.Position.Y - frame.AbsolutePosition.Y)
-                     / math.max(frame.AbsoluteSize.Y, 1)
-        if relY > 0.12 then return end  -- only drag from title bar
-
-        dragging  = true
-        dragStart = input.Position
-        startPos  = frame.Position
-
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end)
-
-    frame.InputChanged:Connect(function(input)
-        if not dragging then return end
-        if input.UserInputType ~= Enum.UserInputType.Touch then return end
-        local delta = input.Position - dragStart
-        frame.Position = UDim2.new(
-            startPos.X.Scale, startPos.X.Offset + delta.X,
-            startPos.Y.Scale, startPos.Y.Offset + delta.Y
-        )
-    end)
+    -- Scale down the whole menu to 75% so it doesn't take up the whole screen
+    local scale = Instance.new('UIScale')
+    scale.Scale = 0.75
+    scale.Parent = Library.MainFrame
+    
+    -- Fix dragging: Only allow dragging from the very top title bar.
+    -- This prevents the menu from swallowing your clicks when you try to press buttons.
+    Library.TitleBar.Active = true
 end
 
--- ─────────────────────────────────────────────────────────────
--- TABS (kept short for mobile)
--- ─────────────────────────────────────────────────────────────
 local Tabs = {
     Main     = Window:AddTab('Main'),
     Settings = Window:AddTab('Settings'),
 }
 
--- === MAIN TAB ===
-local Features = Tabs.Main:AddLeftGroupbox('Features')
+-- 3. Split into Left and Right to keep the UI short (no scrolling needed)
+local LeftGroup  = Tabs.Main:AddLeftGroupbox('Toggles & Buttons')
+local RightGroup = Tabs.Main:AddRightGroupbox('Values & Settings')
 
-Features:AddToggle('MyToggle', {
+-- === LEFT SIDE ===
+LeftGroup:AddToggle('MyToggle', {
     Text    = 'Enable feature',
     Default = true,
     Callback = function(v) print('[cb] Toggle:', v) end
 })
 
-local Btn = Features:AddButton({
+local Btn = LeftGroup:AddButton({
     Text = 'Click me',
     Func = function() print('Button clicked!') end,
-    Tooltip = 'Example button'
 })
 Btn:AddButton({
     Text = 'Sub button',
@@ -99,35 +56,36 @@ Btn:AddButton({
     DoubleClick = true
 })
 
-Features:AddSlider('MySlider', {
+LeftGroup:AddLabel('Keybind'):AddKeyPicker('MyKey', {
+    Default = 'MB2',
+    Mode    = 'Toggle',
+    Text    = 'Example keybind'
+})
+
+-- === RIGHT SIDE ===
+RightGroup:AddSlider('MySlider', {
     Text = 'Slider value',
     Default = 50, Min = 0, Max = 100, Rounding = 0,
     Callback = function(v) print('[cb] Slider:', v) end
 })
 
-Features:AddDropdown('MyDropdown', {
+RightGroup:AddDropdown('MyDropdown', {
     Values  = {'Option A', 'Option B', 'Option C'},
     Default = 1,
     Text    = 'Choose option',
     Callback = function(v) print('[cb] Dropdown:', v) end
 })
 
-Features:AddInput('MyInput', {
-    Default     = 'Text',
+RightGroup:AddInput('MyInput', {
+    Default     = '',
     Text        = 'Textbox',
     Placeholder = 'Type here...',
     Callback    = function(v) print('[cb] Input:', v) end
 })
 
-Features:AddLabel('Color'):AddColorPicker('MyColor', {
+RightGroup:AddLabel('Color'):AddColorPicker('MyColor', {
     Default = Color3.fromRGB(0, 200, 120),
     Title   = 'Pick a color'
-})
-
-Features:AddLabel('Keybind'):AddKeyPicker('MyKey', {
-    Default = 'MB2',
-    Mode    = 'Toggle',
-    Text    = 'Example keybind'
 })
 
 -- === SETTINGS TAB ===
@@ -143,8 +101,5 @@ ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
 SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({ 'MenuKeybind' })
-ThemeManager:SetFolder('MyScriptHub')
-SaveManager:SetFolder('MyScriptHub/specific-game')
 SaveManager:BuildConfigSection(Tabs.Settings)
 ThemeManager:ApplyToTab(Tabs.Settings)
-SaveManager:LoadAutoloadConfig()
