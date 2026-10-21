@@ -1,13 +1,10 @@
 -- ─────────────────────────────────────────────────────────────
--- FETCH THE OFFICIAL (AND FULLY FORMATTED) LIBRARY
+-- FETCH THE OFFICIAL LIBRARY & PATCH FOR MOBILE TOUCH
 -- ─────────────────────────────────────────────────────────────
 local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
 local source = game:HttpGet(repo .. 'Library.lua')
 
--- ─────────────────────────────────────────────────────────────
--- 🛠️ MOBILE TOUCH PATCHES
--- ─────────────────────────────────────────────────────────────
--- 1. Inject touch tracking so sliders and pickers know when your finger is down
+-- 1. Inject touch tracking
 local trackingCode = [[
 local isTouching = false
 game:GetService('UserInputService').InputBegan:Connect(function(i) 
@@ -19,22 +16,19 @@ end)
 ]]
 source = trackingCode .. "\n" .. source
 
--- 2. Replace mouse held-down checks with our touch tracker
+-- 2. Patch mouse checks to accept Touch
 source = source:gsub("InputService:IsMouseButtonPressed%(Enum%.UserInputType%.MouseButton1%)", "isTouching")
-
--- 3. Replace strict mouse clicks with Touch OR Mouse
 source = source:gsub("Input%.UserInputType == Enum%.UserInputType%.MouseButton1", "(Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch)")
 source = source:gsub("Input%.UserInputType ~= Enum%.UserInputType%.MouseButton1", "(Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch)")
 
--- 4. Fix dragging and hovering by updating Mouse coordinates to track your finger
+-- 3. Patch mouse position for dragging and sliders
 source = source:gsub("Mouse%.X", "game:GetService('UserInputService'):GetMouseLocation().X")
 source = source:gsub("Mouse%.Y", "game:GetService('UserInputService'):GetMouseLocation().Y")
 
--- Load the patched library
 local Library = loadstring(source)()
 
 -- ─────────────────────────────────────────────────────────────
--- 🛠️ UI SETUP (Compact Size & No Blue Outline)
+-- UI SETUP (Wider Size & No Blue Outline)
 -- ─────────────────────────────────────────────────────────────
 local Window = Library:CreateWindow({
     Title        = 'Menu',
@@ -42,27 +36,70 @@ local Window = Library:CreateWindow({
     AutoShow     = true,
     TabPadding   = 4, 
     MenuFadeTime = 0.1,
-    Size         = UDim2.fromOffset(420, 260) -- Forces a smaller UI
+    Size         = UDim2.fromOffset(500, 280) -- Made wider (was 420)
 })
 
--- Wait for UI to build, then shrink it and remove the selection outlines
+-- Shrink the UI and remove the blue selection outline
 task.spawn(function()
     task.wait(0.5)
     if Library.ScreenGui then
         Library.ScreenGui.IgnoreGuiInset = true
         
-        -- Make the whole UI 75% smaller
         local uiScale = Instance.new('UIScale')
         uiScale.Scale = 0.75
         uiScale.Parent = Library.ScreenGui
 
-        -- Remove the blue selection outline so taps press instantly
         for _, obj in pairs(Library.ScreenGui:GetDescendants()) do
             if obj:IsA("GuiButton") then
                 obj.Selectable = false 
             end
         end
     end
+end)
+
+-- ─────────────────────────────────────────────────────────────
+-- 🛠️ CUSTOM EXTERNAL TOGGLE BUTTON
+-- ─────────────────────────────────────────────────────────────
+local ToggleGui = Instance.new("ScreenGui")
+ToggleGui.Name = "CustomToggleGui"
+ToggleGui.ResetOnSpawn = false
+ToggleGui.IgnoreGuiInset = true
+ToggleGui.DisplayOrder = 100 -- Keeps it above the game
+ToggleGui.Parent = game:GetService("CoreGui")
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Name = "ToggleBtn"
+ToggleBtn.Parent = ToggleGui
+ToggleBtn.Size = UDim2.fromOffset(80, 30)
+ToggleBtn.Position = UDim2.new(0, 15, 0.35, 0) -- Left side, slightly middle-up
+ToggleBtn.BackgroundColor3 = Library.MainColor
+ToggleBtn.TextColor3 = Library.FontColor
+ToggleBtn.Font = Library.Font
+ToggleBtn.TextSize = 15
+ToggleBtn.Text = "Close" -- Starts as Close because AutoShow = true
+ToggleBtn.AutoButtonColor = false
+ToggleBtn.Selectable = false
+ToggleBtn.Active = true
+
+-- Add the matching outline from the UI
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Color = Library.OutlineColor
+UIStroke.Thickness = 1
+UIStroke.Parent = ToggleBtn
+
+-- Handle clicking/tapping the button
+local isUIVisible = true
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    isUIVisible = not isUIVisible
+    
+    if isUIVisible then
+        ToggleBtn.Text = "Close"
+    else
+        ToggleBtn.Text = "Toggle"
+    end
+    
+    Library:Toggle() -- Calls the library's show/hide function
 end)
 
 -- ─────────────────────────────────────────────────────────────
@@ -73,11 +110,10 @@ local Tabs = {
     Settings = Window:AddTab('Settings'),
 }
 
--- Split into Left and Right to keep it short
 local LeftGroup  = Tabs.Main:AddLeftGroupbox('Features')
 local RightGroup = Tabs.Main:AddRightGroupbox('Values')
 
--- === LEFT SIDE ===
+-- LEFT SIDE
 LeftGroup:AddToggle('MyToggle', {
     Text    = 'Enable feature',
     Default = true,
@@ -97,7 +133,7 @@ LeftGroup:AddLabel('Keybind'):AddKeyPicker('MyKey', {
     Text    = 'Example keybind'
 })
 
--- === RIGHT SIDE ===
+-- RIGHT SIDE
 RightGroup:AddSlider('MySlider', {
     Text = 'Slider value',
     Default = 50, Min = 0, Max = 100, Rounding = 0,
@@ -120,9 +156,13 @@ RightGroup:AddLabel('Color'):AddColorPicker('MyColor', {
     Title   = 'Pick a color'
 })
 
--- === SETTINGS TAB ===
+-- SETTINGS TAB
 local MenuGroup = Tabs.Settings:AddLeftGroupbox('Menu')
-MenuGroup:AddButton('Unload', function() Library:Unload() end)
+MenuGroup:AddButton('Unload', function() 
+    ToggleGui:Destroy() -- Also destroy the toggle button
+    Library:Unload() 
+end)
+
 MenuGroup:AddLabel('Menu bind'):AddKeyPicker('MenuKeybind', {
     Default = 'End', NoUI = true, Text = 'Menu keybind'
 })
