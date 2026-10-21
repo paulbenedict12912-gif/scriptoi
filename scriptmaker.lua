@@ -1,5 +1,5 @@
 -- language: Lua, file: rivals_aimbot.lua, target: Rivals PlaceId 17625359962
--- immunity now tracks InvincibilityChanged signal — the only real immunity gate in the FO
+-- immune gate: EntityRemoved=true, EntityAdded=4s timer then false
 
 local repS = cloneref(game:GetService("ReplicatedStorage"))
 local plrs = cloneref(game:GetService("Players"))
@@ -16,6 +16,8 @@ getgenv().Config = {
     FireRate   = 0.0005,
     WeaponSlot = "Melee"
 }
+
+local SPAWN_PROTECT = 4 -- seconds, tune up/down if needed
 
 local slots = { Primary = 1, Secondary = 2, Melee = 3 }
 local function getSlotNumber() return slots[getgenv().Config.WeaponSlot] or 3 end
@@ -34,39 +36,45 @@ task.spawn(function()
     end
 end)
 
--- ─── deflection tracker ───────────────────────────────────────────────────────
+-- ─── trackers ─────────────────────────────────────────────────────────────────
 local lastFire   = 0
 local deflecting = {}
-
--- ─── INVINCIBILITY TRACKER ────────────────────────────────────────────────────
 local invincible = {}
 local hooked     = {}
+local spawnToken = {} -- guards stale timers
 
 local function hookFO(fo)
     if hooked[fo] then return end
     hooked[fo] = true
 
-    if fo._immune_damage_guis then
-        invincible[fo.Player] = next(fo._immune_damage_guis) ~= nil
-    end
+    local p = fo.Player
+    -- initial state
+    invincible[p] = not fo.Entity or not fo.Entity:IsAlive()
 
-    if fo.InvincibilityChanged then
-        fo.InvincibilityChanged:Connect(function(state)
-            invincible[fo.Player] = state
+    fo.EntityRemoved:Connect(function()
+        invincible[p] = true
+        spawnToken[p] = nil
+    end)
+
+    fo.EntityAdded:Connect(function()
+        invincible[p] = true
+        local token = {}
+        spawnToken[p] = token
+        task.delay(SPAWN_PROTECT, function()
+            if spawnToken[p] == token then
+                invincible[p] = false
+            end
         end)
-    end
-    if fo.EntityRemoved then
-        fo.EntityRemoved:Connect(function()
-            invincible[fo.Player] = false
-        end)
-    end
+    end)
 end
 
 plrs.PlayerRemoving:Connect(function(p)
     deflecting[p] = nil
     invincible[p] = nil
+    spawnToken[p] = nil
 end)
 
+-- ─── deflection tracker ───────────────────────────────────────────────────────
 local function updateDeflection()
     if not FighterController or not FighterController.Objects then return end
     for _, fo in FighterController.Objects do
@@ -84,28 +92,19 @@ local function updateDeflection()
     end
 end
 
--- ─── IMMUNE CHECK ─────────────────────────────────────────────────────────────
+-- ─── immune check ─────────────────────────────────────────────────────────────
 local function isImmune(player)
     if not FighterController or not FighterController.Objects then return true end
     for _, fo in FighterController.Objects do
         if fo.Player ~= player then continue end
-
         hookFO(fo)
-
         if not fo.Entity or not fo.Entity:IsAlive() then return true end
-
         if invincible[player] then return true end
-
-        if fo._immune_damage_guis and next(fo._immune_damage_guis) ~= nil then
-            return true
-        end
-
         local char = player.Character
         if char then
             local hum = char:FindFirstChildWhichIsA("Humanoid")
             if hum and hum.Health <= 0 then return true end
         end
-
         return false
     end
     return true
