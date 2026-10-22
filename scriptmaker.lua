@@ -37,7 +37,7 @@ end)
 local DESYNC_BEHIND_STUDS = 2
 local DESYNC_MODE = 'enemy'  -- 'enemy' (2 studs behind back) | 'void' (deep space)
 
--- VOID POSITION
+-- EXACT VOID POSITION FROM OISHIV3.TXT KERNEL
 local VOID_POS = Vector3.new(
     math.random(-100000, -10000),
     100000,
@@ -52,9 +52,9 @@ statusLabel.Visible       = false
 statusLabel.Center        = true
 statusLabel.Outline       = true
 statusLabel.Font          = 3          -- Monospace
-statusLabel.Size          = 14         -- Smaller size
-statusLabel.Color         = Color3.fromRGB(255, 255, 255) -- White text
-statusLabel.OutlineColor  = Color3.fromRGB(0, 0, 0)       -- Black outline
+statusLabel.Size          = 18         -- Ticker size
+statusLabel.Color         = Color3.fromRGB(200, 200, 200)
+statusLabel.OutlineColor  = Color3.fromRGB(0, 0, 0)
 statusLabel.Transparency  = 1
 
 local ammoLabel = Drawing.new("Text")
@@ -62,9 +62,9 @@ ammoLabel.Visible         = false
 ammoLabel.Center          = true
 ammoLabel.Outline         = true
 ammoLabel.Font            = 3
-ammoLabel.Size            = 14
-ammoLabel.Color           = Color3.fromRGB(255, 255, 255) -- White text
-ammoLabel.OutlineColor    = Color3.fromRGB(0, 0, 0)       -- Black outline
+ammoLabel.Size            = 18
+ammoLabel.Color           = Color3.fromRGB(180, 220, 255)
+ammoLabel.OutlineColor    = Color3.fromRGB(0, 0, 0)
 ammoLabel.Transparency    = 1
 
 -- Native FireServer
@@ -98,12 +98,12 @@ do
     function __i1j2k3:__init()
         self.__active = true
         self.__target = nil
+        self.__desync = false
         self.__conn1 = nil
         self.__conn2 = nil
         self.__oldfunc = nil
         self.__lastShot = 0
         self.__statusConn = nil
-        self.__currentStatus = 'void'
         self:__setup()
     end
 
@@ -167,6 +167,9 @@ do
         return nil
     end
 
+    -- ═══════════════════════════════════════════════════════════════════════
+    -- Reload detection helper
+    -- ═══════════════════════════════════════════════════════════════════════
     function __i1j2k3:__isLocalReloading()
         local fighter = self:__getLocalFighter()
         local item = fighter and rawget(fighter, 'EquippedItem')
@@ -226,34 +229,34 @@ do
 
     function __i1j2k3:__autoShoot(targetPlayer, targetChar)
         local fighter = self:__getLocalFighter()
-        if not fighter then return false end
+        if not fighter then return end
 
         local action = self:__getAction(fighter)
-        if not action then return false end
+        if not action then return end
 
         if action.type == 'Reload' then
-            if self:__isLocalReloading() then return false end
+            if self:__isLocalReloading() then return end
             self:__fireReload(action.item)
-            return false
+            return
         end
 
-        if action.type ~= 'Attack' then return false end
+        if action.type ~= 'Attack' then return end
 
         local item = action.item
-        if not item then return false end
-        if self:__isLocalReloading() then return false end
+        if not item then return end
+        if self:__isLocalReloading() then return end
 
         local shootCD = rawget(item, '_shoot_cooldown')
-        if type(shootCD) == 'number' and tick() < shootCD then return false end
+        if type(shootCD) == 'number' and tick() < shootCD then return end
 
         local now = tick()
-        if now - self.__lastShot < 0.01 then return false end
+        if now - self.__lastShot < 0.01 then return end
 
         local head = targetChar:FindFirstChild("Head")
-        if not head then return false end
+        if not head then return end
 
         local oid = self:__itemObjectId(item)
-        if not oid then return false end
+        if not oid then return end
 
         local headPos = head.Position
         local headCF  = head.CFrame
@@ -282,11 +285,10 @@ do
 
         local remote = __b8c9d0.Remotes.Replication.Fighter.UseItem
         local token = EnumLibrary:ToEnum("StartShooting")
-        if not (remote and token) then return false end
+        if not (remote and token) then return end
 
         fireServerNative(remote, oid, token, payload, nil)
         self.__lastShot = now
-        return true
     end
 
     function __i1j2k3:__updateStatus()
@@ -307,15 +309,31 @@ do
         local centerX = vp.X / 2
         local centerY = vp.Y / 2
 
-        -- Position exactly under the crosshair
-        statusLabel.Position = Vector2.new(centerX, centerY + 35)
-        ammoLabel.Position   = Vector2.new(centerX, centerY + 55)
+        -- Anchored under the crosshair
+        statusLabel.Position = Vector2.new(centerX, centerY + 40)
+        ammoLabel.Position   = Vector2.new(centerX, centerY + 65)
 
-        local state = self.__currentStatus
+        -- State: idle | on enemy | void | void (reloading)
+        local state = 'idle'
+        if self.__desync and self.__curr and self.__curr.Character then
+            if self:__isLocalReloading() then
+                state = 'void (reloading)'
+            else
+                state = (DESYNC_MODE == 'void') and 'void' or 'on enemy'
+            end
+        end
 
         statusLabel.Text = 'Ragebot: ' .. state
+        if state == 'on enemy' then
+            statusLabel.Color = Color3.fromRGB(0, 255, 120)   -- green
+        elseif state:find('void') then
+            statusLabel.Color = Color3.fromRGB(255, 90, 90)   -- red
+        else
+            statusLabel.Color = Color3.fromRGB(200, 200, 200) -- grey
+        end
         statusLabel.Visible = true
 
+        -- Ammo counter
         local ammoText = 'Ammo: ---'
         local fighter = self:__getLocalFighter()
         if fighter then
@@ -339,65 +357,34 @@ do
         end
 
         ammoLabel.Text = ammoText
+        if ammoText:match('^Ammo: 0/') or ammoText == 'Ammo: ---' then
+            ammoLabel.Color = Color3.fromRGB(255, 100, 100)
+        else
+            ammoLabel.Color = Color3.fromRGB(180, 220, 255)
+        end
         ammoLabel.Visible = true
     end
 
     function __i1j2k3:__setup()
-        -- 1. Target tracking loop (Skipped immune enemies naturally)
         self.__conn1 = __y5z6a7.Heartbeat:Connect(function()
             if not self.__active then return end
-            self.__target = self:__find()
+            local newTarget = self:__find()
+            self.__target = newTarget
+            if newTarget then
+                if not self.__desync or self.__curr ~= newTarget then
+                    self:__desync_start(newTarget)
+                end
+            else
+                if self.__desync then
+                    self:__desync_stop()
+                end
+            end
         end)
 
-        -- 2. Status update loop
         self.__statusConn = __y5z6a7.RenderStepped:Connect(function()
             self:__updateStatus()
         end)
 
-        -- 3. Permanent Desync + Auto Shoot loop
-        self.__conn2 = __y5z6a7.Heartbeat:Connect(function()
-            if not self.__active then return end
-            local __f6g7h8 = __z2a3b4.__root
-            if not __f6g7h8 then return end
-
-            local char = self.__target and self.__target.Character
-            local isReloading = self:__isLocalReloading()
-
-            local __l2m3n4 = __f6g7h8.CFrame
-            local __o5p6q7 = __f6g7h8.Velocity
-            local __r8s9t0 = __f6g7h8.RotVelocity
-
-            local state = 'void'
-            local __desyncCF = CFrame.new(VOID_POS)
-
-            -- If we have a valid target, are not reloading, and mode is 'enemy'
-            if char and not isReloading and DESYNC_MODE == 'enemy' then
-                local enemyRoot = char:FindFirstChild("HumanoidRootPart")
-                if enemyRoot then
-                    state = 'enemy'
-                    __desyncCF = enemyRoot.CFrame * CFrame.new(0, 0, DESYNC_BEHIND_STUDS)
-                    
-                    -- Fire the shot. If it shoots, we upgrade the status to 'on enemy'
-                    local didShoot = self:__autoShoot(self.__target, char)
-                    if didShoot then
-                        state = 'on enemy'
-                    end
-                end
-            end
-
-            -- Apply the chosen state (Void or Enemy)
-            self.__currentStatus = state
-            __f6g7h8.CFrame = __desyncCF
-
-            __y5z6a7:BindToRenderStep("__restore", 101, function()
-                __f6g7h8.CFrame = __l2m3n4
-                __f6g7h8.Velocity = __o5p6q7
-                __f6g7h8.RotVelocity = __r8s9t0
-                __y5z6a7:UnbindFromRenderStep("__restore")
-            end)
-        end)
-
-        -- Manual silent aim hook
         local __l4m5n6 = __t6u7v8.StartShooting
         self.__oldfunc = __l4m5n6
         __t6u7v8.StartShooting = function(__o7p8q9, ...)
@@ -415,10 +402,14 @@ do
                 return unpack(__r0s1t2)
             end
             
+            -- Only apply silent aim if we aren't reloading
             if self:__isLocalReloading() then
                 return unpack(__r0s1t2)
             end
 
+            if not self.__desync or self.__curr ~= __x6y7z8 then
+                self:__desync_start(__x6y7z8)
+            end
             local __a9b0c1 = __x6y7z8.Character:FindFirstChild("Head")
             if not __a9b0c1 then return unpack(__r0s1t2) end
 
@@ -471,6 +462,61 @@ do
         end
 
         return closest
+    end
+
+    function __i1j2k3:__desync_start(__c3d4e5)
+        if self.__conn2 then self.__conn2:Disconnect() end
+        self.__desync = true
+        self.__curr = __c3d4e5
+
+        self.__conn2 = __y5z6a7.Heartbeat:Connect(function()
+            if not self.__desync then return end
+            local __f6g7h8 = __z2a3b4.__root
+            if not __f6g7h8 then return end
+
+            local char = __c3d4e5.Character
+            if not char then self:__desync_stop(); return end
+
+            local enemyRoot = char:FindFirstChild("HumanoidRootPart")
+            if not enemyRoot then self:__desync_stop(); return end
+
+            local __l2m3n4 = __f6g7h8.CFrame
+            local __o5p6q7 = __f6g7h8.Velocity
+            local __r8s9t0 = __f6g7h8.RotVelocity
+
+            local isReloading = self:__isLocalReloading()
+            local __desyncCF
+
+            -- If reloading OR forced void mode, teleport to the deep space void coordinates
+            if isReloading or DESYNC_MODE == 'void' then
+                __desyncCF = CFrame.new(VOID_POS)
+            else
+                __desyncCF = enemyRoot.CFrame * CFrame.new(0, 0, DESYNC_BEHIND_STUDS)
+            end
+            
+            __f6g7h8.CFrame = __desyncCF
+
+            -- Only shoot if NOT reloading
+            if not isReloading then
+                self:__autoShoot(__c3d4e5, char)
+            end
+
+            __y5z6a7:BindToRenderStep("__restore", 101, function()
+                __f6g7h8.CFrame = __l2m3n4
+                __f6g7h8.Velocity = __o5p6q7
+                __f6g7h8.RotVelocity = __r8s9t0
+                __y5z6a7:UnbindFromRenderStep("__restore")
+            end)
+        end)
+    end
+
+    function __i1j2k3:__desync_stop()
+        self.__desync = false
+        self.__curr = nil
+        if self.__conn2 then
+            self.__conn2:Disconnect()
+            self.__conn2 = nil
+        end
     end
 
     function __i1j2k3:Shutdown()
