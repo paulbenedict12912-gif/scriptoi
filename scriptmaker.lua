@@ -52,9 +52,9 @@ statusLabel.Visible       = false
 statusLabel.Center        = true
 statusLabel.Outline       = true
 statusLabel.Font          = 3          -- Monospace
-statusLabel.Size          = 18         -- Ticker size
-statusLabel.Color         = Color3.fromRGB(200, 200, 200)
-statusLabel.OutlineColor  = Color3.fromRGB(0, 0, 0)
+statusLabel.Size          = 14         -- Smaller size
+statusLabel.Color         = Color3.fromRGB(255, 255, 255) -- White text
+statusLabel.OutlineColor  = Color3.fromRGB(0, 0, 0)       -- Black outline
 statusLabel.Transparency  = 1
 
 local ammoLabel = Drawing.new("Text")
@@ -62,9 +62,9 @@ ammoLabel.Visible         = false
 ammoLabel.Center          = true
 ammoLabel.Outline         = true
 ammoLabel.Font            = 3
-ammoLabel.Size            = 18
-ammoLabel.Color           = Color3.fromRGB(180, 220, 255)
-ammoLabel.OutlineColor    = Color3.fromRGB(0, 0, 0)
+ammoLabel.Size            = 14
+ammoLabel.Color           = Color3.fromRGB(255, 255, 255) -- White text
+ammoLabel.OutlineColor    = Color3.fromRGB(0, 0, 0)       -- Black outline
 ammoLabel.Transparency    = 1
 
 -- Native FireServer
@@ -307,19 +307,13 @@ do
         local centerX = vp.X / 2
         local centerY = vp.Y / 2
 
-        statusLabel.Position = Vector2.new(centerX, centerY + 40)
-        ammoLabel.Position   = Vector2.new(centerX, centerY + 65)
+        -- Position exactly under the crosshair
+        statusLabel.Position = Vector2.new(centerX, centerY + 35)
+        ammoLabel.Position   = Vector2.new(centerX, centerY + 55)
 
         local state = self.__currentStatus
 
         statusLabel.Text = 'Ragebot: ' .. state
-        if state == 'on enemy' then
-            statusLabel.Color = Color3.fromRGB(0, 255, 120)   -- green
-        elseif state == 'enemy' then
-            statusLabel.Color = Color3.fromRGB(255, 220, 100) -- yellow/orange
-        else
-            statusLabel.Color = Color3.fromRGB(255, 90, 90)   -- red
-        end
         statusLabel.Visible = true
 
         local ammoText = 'Ammo: ---'
@@ -345,11 +339,6 @@ do
         end
 
         ammoLabel.Text = ammoText
-        if ammoText:match('^Ammo: 0/') or ammoText == 'Ammo: ---' then
-            ammoLabel.Color = Color3.fromRGB(255, 100, 100)
-        else
-            ammoLabel.Color = Color3.fromRGB(180, 220, 255)
-        end
         ammoLabel.Visible = true
     end
 
@@ -381,7 +370,7 @@ do
             local state = 'void'
             local __desyncCF = CFrame.new(VOID_POS)
 
-            -- Condition: We have a valid enemy (not immune), we are not reloading, and mode is enemy
+            -- If we have a valid target, are not reloading, and mode is 'enemy'
             if char and not isReloading and DESYNC_MODE == 'enemy' then
                 local enemyRoot = char:FindFirstChild("HumanoidRootPart")
                 if enemyRoot then
