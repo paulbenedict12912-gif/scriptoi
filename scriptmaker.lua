@@ -1,185 +1,503 @@
--- language: Lua, file: rivals_aimbot.lua, target: Rivals PlaceId 17625359962
--- immune gate: entity.Data.IsInvincible — no auto weapon switch
-
-local repS = cloneref(game:GetService("ReplicatedStorage"))
-local plrs = cloneref(game:GetService("Players"))
-local runS = cloneref(game:GetService("RunService"))
-local ws   = cloneref(game:GetService("Workspace"))
-local lplr = plrs.LocalPlayer
-local util = require(repS.Modules.Utility)
-local enum = require(repS.Modules.EnumLibrary)
-local FighterController  = require(lplr.PlayerScripts.Controllers.FighterController)
-local SpectateController = require(lplr.PlayerScripts.Controllers:WaitForChild("SpectateController"))
-
-getgenv().Config = {
-    Enabled  = true,
-    FireRate = 0.0005,
-}
-
--- ─── deflection tracker ───────────────────────────────────────────────────────
-local lastFire   = 0
-local deflecting = {}
-
-plrs.PlayerRemoving:Connect(function(p)
-    deflecting[p] = nil
-end)
-
-local function updateDeflection()
-    if not FighterController or not FighterController.Objects then return end
-    for _, fo in FighterController.Objects do
-        local p = fo.Player
-        if not p then continue end
-        if not fo.Entity or not fo.Entity:IsAlive() then
-            deflecting[p] = false; continue
+local __a1b2c3 = setmetatable({}, {
+    __index = function(__d4e5f6, __g7h8i9)
+        local __j0k1l2, __m3n4o5 = pcall(function()
+            return game:GetService(__g7h8i9)
+        end)
+        if __m3n4o5 then
+            return cloneref(__m3n4o5)
         end
-        local eq = fo.EquippedItem
-        local isKatana = eq and eq.ViewModel and eq.ViewModel.Name == "Katana"
-        deflecting[p] = isKatana
-            and ((eq._attack_cooldown and eq._attack_cooldown > tick()) or false)
-            or false
+        return nil
     end
+})
+
+local __p6q7r8 = getgenv()
+if __p6q7r8.__s9t0u1 then
+    __p6q7r8.__s9t0u1:Shutdown()
 end
 
--- ─── immune check ─────────────────────────────────────────────────────────────
-local function isImmune(player)
-    if not FighterController or not FighterController.Objects then return true end
-    for _, fo in FighterController.Objects do
-        if fo.Player ~= player then continue end
-        local entity = rawget(fo, 'Entity')
-        if not entity or not entity:IsAlive() then return true end
-        local data = rawget(entity, 'Data')
-        if data ~= nil and rawget(data, 'IsInvincible') == true then return true end
-        local char = player.Character
-        if char then
-            local hum = char:FindFirstChildWhichIsA("Humanoid")
-            if hum and hum.Health <= 0 then return true end
+local __v2w3x4 = __a1b2c3.Players
+local __y5z6a7 = __a1b2c3.RunService
+local __b8c9d0 = __a1b2c3.ReplicatedStorage
+local __e1f2g3 = __a1b2c3.Workspace
+local __h4i5j6 = __a1b2c3.UserInputService
+local __k7l8m9 = __v2w3x4.LocalPlayer
+local __n0o1p2 = __e1f2g3.CurrentCamera
+local __q3r4s5 = __k7l8m9.PlayerScripts
+local __t6u7v8 = require(__q3r4s5.Modules.ItemTypes.Gun)
+local __w9x0y1 = require(__b8c9d0.Modules.Utility)
+local EnumLibrary = require(__b8c9d0.Modules.EnumLibrary)
+local FighterController
+pcall(function()
+    FighterController = require(__q3r4s5.Controllers.FighterController)
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- CONFIG
+-- ═══════════════════════════════════════════════════════════════════════════
+local DESYNC_BEHIND_STUDS = 2
+local DESYNC_MODE = 'enemy'  -- 'enemy' (2 studs behind back) | 'void' (deep space)
+
+-- VOID POSITION
+local VOID_POS = Vector3.new(
+    math.random(-100000, -10000),
+    100000,
+    math.random(-100000, 10000)
+)
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Status display (Drawing API — no GUI)
+-- ═══════════════════════════════════════════════════════════════════════════
+local statusLabel = Drawing.new("Text")
+statusLabel.Visible       = false
+statusLabel.Center        = true
+statusLabel.Outline       = true
+statusLabel.Font          = 3          -- Monospace
+statusLabel.Size          = 18         -- Ticker size
+statusLabel.Color         = Color3.fromRGB(200, 200, 200)
+statusLabel.OutlineColor  = Color3.fromRGB(0, 0, 0)
+statusLabel.Transparency  = 1
+
+local ammoLabel = Drawing.new("Text")
+ammoLabel.Visible         = false
+ammoLabel.Center          = true
+ammoLabel.Outline         = true
+ammoLabel.Font            = 3
+ammoLabel.Size            = 18
+ammoLabel.Color           = Color3.fromRGB(180, 220, 255)
+ammoLabel.OutlineColor    = Color3.fromRGB(0, 0, 0)
+ammoLabel.Transparency    = 1
+
+-- Native FireServer
+local __cleanRemote = Instance.new('RemoteEvent')
+local fireServerNative
+if clonefunction then
+    fireServerNative = clonefunction(__cleanRemote.FireServer)
+else
+    fireServerNative = function(remote, ...) return remote:FireServer(...) end
+end
+pcall(function() __cleanRemote:Destroy() end)
+
+local __z2a3b4 = setmetatable({}, {
+    __index = function(_, __c5d6e7)
+        local __f8g9h0 = __k7l8m9.Character
+        if not __f8g9h0 then return nil end
+        if __c5d6e7 == "__root" then
+            return __f8g9h0:FindFirstChild("HumanoidRootPart")
+        elseif __c5d6e7 == "__head" then
+            return __f8g9h0:FindFirstChild("Head")
+        end
+        return nil
+    end
+})
+
+__p6q7r8.__s9t0u1 = {}
+
+do
+    local __i1j2k3 = __p6q7r8.__s9t0u1
+
+    function __i1j2k3:__init()
+        self.__active = true
+        self.__target = nil
+        self.__conn1 = nil
+        self.__conn2 = nil
+        self.__oldfunc = nil
+        self.__lastShot = 0
+        self.__statusConn = nil
+        self.__currentStatus = 'void'
+        self:__setup()
+    end
+
+    function __i1j2k3:__isImmune(player)
+        if not player then return true end
+        if not FighterController or not FighterController.Objects then return false end
+        for _, fo in FighterController.Objects do
+            if fo.Player ~= player then continue end
+            local entity = rawget(fo, 'Entity')
+            if not entity or not entity:IsAlive() then return true end
+            local data = rawget(entity, 'Data')
+            if data ~= nil and rawget(data, 'IsInvincible') == true then return true end
+            return false
         end
         return false
     end
-    return true
-end
 
--- ─── team / enemy check ──────────────────────────────────────────────────────
-local function isEnemy(player)
-    if player == lplr then return false end
-    local duel = SpectateController.CurrentDuelSubject
-    local localDueler = duel and duel:GetDueler(lplr)
-    local localTeam   = localDueler and localDueler:Get("TeamID") or nil
-    if localTeam and duel and duel.Duelers then
-        for _, dueler in duel.Duelers do
-            if dueler.Player == player then
-                return dueler:Get("TeamID") ~= localTeam
+    function __i1j2k3:__getLocalFighter()
+        if not FighterController then return nil end
+        if FighterController.LocalFighter then return FighterController.LocalFighter end
+        if type(FighterController.GetFighter) == 'function' then
+            local f = FighterController:GetFighter(__k7l8m9)
+            if f then return f end
+            if __k7l8m9.Character then
+                f = FighterController:GetFighter(__k7l8m9.Character)
+                if f then return f end
             end
         end
+        return nil
     end
-    local pTeam = player:GetAttribute("TeamID")
-    local lTeam = lplr:GetAttribute("TeamID")
-    if pTeam and lTeam then return pTeam ~= lTeam end
-    return true
-end
 
--- ─── closest non-immune enemy ─────────────────────────────────────────────────
-local function getClosestTarget()
-    local char = lplr.Character
-    if not char then return nil, nil, nil end
-    local myRoot = char:FindFirstChild("HumanoidRootPart")
-    if not myRoot then return nil, nil, nil end
-
-    local best, bestRoot, bestHead, bestDist = nil, nil, nil, 500
-
-    for _, p in plrs:GetPlayers() do
-        if not isEnemy(p) then continue end
-        if isImmune(p) then continue end
-        local pChar = p.Character
-        if not pChar then continue end
-        local pRoot = pChar:FindFirstChild("HumanoidRootPart")
-        local pHead = pChar:FindFirstChild("Head")
-        local pHum  = pChar:FindFirstChildWhichIsA("Humanoid")
-        if not (pRoot and pHead and pHum and pHum.Health > 0) then continue end
-        local dist = (myRoot.Position - pRoot.Position).Magnitude
-        if dist < bestDist then
-            bestDist = dist; best = p; bestRoot = pRoot; bestHead = pHead
-        end
+    function __i1j2k3:__itemObjectId(item)
+        local data = rawget(item, 'Data')
+        return data and rawget(data, 'ObjectID') or nil
     end
-    return best, bestRoot, bestHead
-end
+    function __i1j2k3:__itemType(item)
+        local info = rawget(item, 'Info')
+        return info and rawget(info, 'Type') or nil
+    end
+    function __i1j2k3:__itemIsRaycast(item)
+        local info = rawget(item, 'Info')
+        return info and rawget(info, 'IsRaycast') == true
+    end
+    function __i1j2k3:__itemAmmo(item)
+        local data = rawget(item, 'Data')
+        local a = data and rawget(data, 'Ammo')
+        return type(a) == 'number' and a or 0
+    end
+    function __i1j2k3:__itemAmmoReserve(item)
+        local data = rawget(item, 'Data')
+        local r = data and rawget(data, 'AmmoReserve')
+        return type(r) == 'number' and r or 0
+    end
+    function __i1j2k3:__itemIsEquipped(item)
+        return rawget(item, 'IsEquipped')
+    end
+    function __i1j2k3:__itemCategory(slotKey)
+        if slotKey == 1 then return 'Primary' end
+        if slotKey == 2 then return 'Secondary' end
+        if slotKey == 3 then return 'Melee' end
+        return nil
+    end
 
--- ─── knife viewmodel check ────────────────────────────────────────────────────
-local function hasKnifeViewModel(targetPlayer)
-    if not targetPlayer then return false end
-    local viewModels = ws:FindFirstChild("ViewModels")
-    if not viewModels then return false end
-    for _, m in viewModels:GetChildren() do
-        if m:IsA("Model")
-           and string.find(m.Name, targetPlayer.Name, 1, true)
-           and string.find(m.Name, "Knife",           1, true) then
+    function __i1j2k3:__isLocalReloading()
+        local fighter = self:__getLocalFighter()
+        local item = fighter and rawget(fighter, 'EquippedItem')
+        if not item then return false end
+        
+        local now = tick()
+        local rc = rawget(item, '_reload_cooldown')
+        if type(rc) == 'number' and now < rc then return true end
+        
+        local nc = rawget(item, '_shoot_cooldown_no_ammo')
+        if type(nc) == 'number' and now < nc then return true end
+        
+        if self:__itemAmmo(item) <= 0 and self:__itemAmmoReserve(item) > 0 then
             return true
         end
-    end
-    return false
-end
-
--- ─── heartbeat ────────────────────────────────────────────────────────────────
-runS.Heartbeat:Connect(function()
-    updateDeflection()
-
-    local targetPlayer, targetRoot, targetHead = getClosestTarget()
-    local desyncCF = nil
-
-    if targetRoot and targetHead then
-        -- desync teleport position: 4 studs above the target's head
-        local desyncPos = targetHead.Position + Vector3.new(0, 4, 0)
-        desyncCF = CFrame.lookAt(desyncPos, targetHead.Position)
+        return false
     end
 
-    if desyncCF and lplr.Character then
-        local myRoot = lplr.Character:FindFirstChild("HumanoidRootPart")
-        if myRoot then
-            local oldCF     = myRoot.CFrame
-            local oldVel    = myRoot.Velocity
-            local oldRotVel = myRoot.RotVelocity
-            myRoot.CFrame   = desyncCF
-            runS:BindToRenderStep("__restore", 101, function()
-                if myRoot then
-                    myRoot.CFrame      = oldCF
-                    myRoot.Velocity    = oldVel
-                    myRoot.RotVelocity = oldRotVel
+    function __i1j2k3:__getAction(fighter)
+        if not fighter then return nil end
+        local items = rawget(fighter, 'Items')
+        if type(items) ~= 'table' then return nil end
+
+        local equipped, equippedIndex = nil, nil
+        for slotKey, item in next, items do
+            if type(item) == 'table'
+                and self:__itemCategory(slotKey) ~= nil
+                and self:__itemType(item) == 'Gun'
+                and self:__itemIsEquipped(item) then
+                equipped = item
+                equippedIndex = slotKey
+                break
+            end
+        end
+
+        if not equipped then return nil end
+
+        if self:__itemAmmo(equipped) > 0 then
+            return { type = 'Attack', item = equipped, index = equippedIndex }
+        end
+        if self:__itemAmmoReserve(equipped) > 0 then
+            return { type = 'Reload', item = equipped, index = equippedIndex }
+        end
+        return nil
+    end
+
+    function __i1j2k3:__fireReload(item)
+        local oid = self:__itemObjectId(item)
+        if not oid then return end
+        local remote = __b8c9d0.Remotes.Replication.Fighter.UseItem
+        local start  = EnumLibrary:ToEnum("StartReloading")
+        local reload = EnumLibrary:ToEnum("Reload")
+        if not (remote and start and reload) then return end
+        local payload = { [utf8.char(1)] = reload, [utf8.char(2)] = reload }
+        fireServerNative(remote, oid, start, payload, nil)
+    end
+
+    function __i1j2k3:__autoShoot(targetPlayer, targetChar)
+        local fighter = self:__getLocalFighter()
+        if not fighter then return false end
+
+        local action = self:__getAction(fighter)
+        if not action then return false end
+
+        if action.type == 'Reload' then
+            if self:__isLocalReloading() then return false end
+            self:__fireReload(action.item)
+            return false
+        end
+
+        if action.type ~= 'Attack' then return false end
+
+        local item = action.item
+        if not item then return false end
+        if self:__isLocalReloading() then return false end
+
+        local shootCD = rawget(item, '_shoot_cooldown')
+        if type(shootCD) == 'number' and tick() < shootCD then return false end
+
+        local now = tick()
+        if now - self.__lastShot < 0.01 then return false end
+
+        local head = targetChar:FindFirstChild("Head")
+        if not head then return false end
+
+        local oid = self:__itemObjectId(item)
+        if not oid then return false end
+
+        local headPos = head.Position
+        local headCF  = head.CFrame
+        local lookVec = headCF.LookVector
+
+        local aimCF = CFrame.new(headPos, headPos + lookVec)
+        local objSpaceHeadOff = headCF:ToObjectSpace(
+            CFrame.new(headPos + Vector3.new(
+                math.random() * 0.1, math.random() * 0.1, math.random() * 0.1
+            ))
+        )
+
+        local inner = {
+            [utf8.char(0)] = __w9x0y1:EncodeCFrame(aimCF),
+            [utf8.char(1)] = __w9x0y1:EncodeCFrame(CFrame.new(headPos)),
+            [utf8.char(2)] = head,
+            [utf8.char(3)] = __w9x0y1:EncodeCFrame(objSpaceHeadOff),
+        }
+
+        local payload
+        if self:__itemIsRaycast(item) then
+            payload = { [utf8.char(1)] = inner, [utf8.char(2)] = true }
+        else
+            payload = { [utf8.char(1)] = inner }
+        end
+
+        local remote = __b8c9d0.Remotes.Replication.Fighter.UseItem
+        local token = EnumLibrary:ToEnum("StartShooting")
+        if not (remote and token) then return false end
+
+        fireServerNative(remote, oid, token, payload, nil)
+        self.__lastShot = now
+        return true
+    end
+
+    function __i1j2k3:__updateStatus()
+        if not self.__active then
+            statusLabel.Visible = false
+            ammoLabel.Visible   = false
+            return
+        end
+
+        local cam = __e1f2g3.CurrentCamera
+        if not cam then
+            statusLabel.Visible = false
+            ammoLabel.Visible   = false
+            return
+        end
+
+        local vp = cam.ViewportSize
+        local centerX = vp.X / 2
+        local centerY = vp.Y / 2
+
+        statusLabel.Position = Vector2.new(centerX, centerY + 40)
+        ammoLabel.Position   = Vector2.new(centerX, centerY + 65)
+
+        local state = self.__currentStatus
+
+        statusLabel.Text = 'Ragebot: ' .. state
+        if state == 'on enemy' then
+            statusLabel.Color = Color3.fromRGB(0, 255, 120)   -- green
+        elseif state == 'enemy' then
+            statusLabel.Color = Color3.fromRGB(255, 220, 100) -- yellow/orange
+        else
+            statusLabel.Color = Color3.fromRGB(255, 90, 90)   -- red
+        end
+        statusLabel.Visible = true
+
+        local ammoText = 'Ammo: ---'
+        local fighter = self:__getLocalFighter()
+        if fighter then
+            local items = rawget(fighter, 'Items')
+            if type(items) == 'table' then
+                for slotKey, item in next, items do
+                    if type(item) == 'table'
+                        and self:__itemCategory(slotKey) ~= nil
+                        and self:__itemIsEquipped(item) then
+                        local mag     = self:__itemAmmo(item)
+                        local reserve = self:__itemAmmoReserve(item)
+                        if self:__itemType(item) == 'Gun' then
+                            ammoText = string.format('Ammo: %d/%d', mag, reserve)
+                        else
+                            ammoText = 'Ammo: —'
+                        end
+                        break
+                    end
                 end
-                runS:UnbindFromRenderStep("__restore")
+            end
+        end
+
+        ammoLabel.Text = ammoText
+        if ammoText:match('^Ammo: 0/') or ammoText == 'Ammo: ---' then
+            ammoLabel.Color = Color3.fromRGB(255, 100, 100)
+        else
+            ammoLabel.Color = Color3.fromRGB(180, 220, 255)
+        end
+        ammoLabel.Visible = true
+    end
+
+    function __i1j2k3:__setup()
+        -- 1. Target tracking loop (Skipped immune enemies naturally)
+        self.__conn1 = __y5z6a7.Heartbeat:Connect(function()
+            if not self.__active then return end
+            self.__target = self:__find()
+        end)
+
+        -- 2. Status update loop
+        self.__statusConn = __y5z6a7.RenderStepped:Connect(function()
+            self:__updateStatus()
+        end)
+
+        -- 3. Permanent Desync + Auto Shoot loop
+        self.__conn2 = __y5z6a7.Heartbeat:Connect(function()
+            if not self.__active then return end
+            local __f6g7h8 = __z2a3b4.__root
+            if not __f6g7h8 then return end
+
+            local char = self.__target and self.__target.Character
+            local isReloading = self:__isLocalReloading()
+
+            local __l2m3n4 = __f6g7h8.CFrame
+            local __o5p6q7 = __f6g7h8.Velocity
+            local __r8s9t0 = __f6g7h8.RotVelocity
+
+            local state = 'void'
+            local __desyncCF = CFrame.new(VOID_POS)
+
+            -- Condition: We have a valid enemy (not immune), we are not reloading, and mode is enemy
+            if char and not isReloading and DESYNC_MODE == 'enemy' then
+                local enemyRoot = char:FindFirstChild("HumanoidRootPart")
+                if enemyRoot then
+                    state = 'enemy'
+                    __desyncCF = enemyRoot.CFrame * CFrame.new(0, 0, DESYNC_BEHIND_STUDS)
+                    
+                    -- Fire the shot. If it shoots, we upgrade the status to 'on enemy'
+                    local didShoot = self:__autoShoot(self.__target, char)
+                    if didShoot then
+                        state = 'on enemy'
+                    end
+                end
+            end
+
+            -- Apply the chosen state (Void or Enemy)
+            self.__currentStatus = state
+            __f6g7h8.CFrame = __desyncCF
+
+            __y5z6a7:BindToRenderStep("__restore", 101, function()
+                __f6g7h8.CFrame = __l2m3n4
+                __f6g7h8.Velocity = __o5p6q7
+                __f6g7h8.RotVelocity = __r8s9t0
+                __y5z6a7:UnbindFromRenderStep("__restore")
             end)
+        end)
+
+        -- Manual silent aim hook
+        local __l4m5n6 = __t6u7v8.StartShooting
+        self.__oldfunc = __l4m5n6
+        __t6u7v8.StartShooting = function(__o7p8q9, ...)
+            local __r0s1t2 = {__l4m5n6(__o7p8q9, ...)}
+            if not __o7p8q9.ClientFighter or not __o7p8q9.ClientFighter.IsLocalPlayer then
+                return unpack(__r0s1t2)
+            end
+            local __u3v4w5 = __r0s1t2[3]
+            if not __u3v4w5 or typeof(__u3v4w5) ~= "table" then
+                return unpack(__r0s1t2)
+            end
+            __r0s1t2[4] = true
+            local __x6y7z8 = self.__target
+            if not self.__active or not __x6y7z8 or not __x6y7z8.Character then
+                return unpack(__r0s1t2)
+            end
+            
+            if self:__isLocalReloading() then
+                return unpack(__r0s1t2)
+            end
+
+            local __a9b0c1 = __x6y7z8.Character:FindFirstChild("Head")
+            if not __a9b0c1 then return unpack(__r0s1t2) end
+
+            local __d2e3f4 = __a9b0c1.Position
+            local __g5h6i7 = __a9b0c1.CFrame
+            local __j8k9l0 = __d2e3f4
+            local __p4q5r6 = __g5h6i7:ToObjectSpace(
+                CFrame.new(__d2e3f4 + Vector3.new(
+                    math.random() * 0.1, math.random() * 0.1, math.random() * 0.1
+                ))
+            )
+            __u3v4w5[utf8.char(0)] = __w9x0y1:EncodeCFrame(
+                CFrame.new(__j8k9l0, __d2e3f4 + __a9b0c1.CFrame.LookVector)
+            )
+            __u3v4w5[utf8.char(1)] = __w9x0y1:EncodeCFrame(CFrame.new(__d2e3f4))
+            __u3v4w5[utf8.char(2)] = __a9b0c1
+            __u3v4w5[utf8.char(3)] = __w9x0y1:EncodeCFrame(__p4q5r6)
+            return unpack(__r0s1t2)
         end
     end
 
-    if not getgenv().Config.Enabled then return end
-    if not targetPlayer or not targetHead or not targetRoot then return end
-    if deflecting[targetPlayer] then return end
-    if not lplr.Character or not lplr.Character:FindFirstChild("HumanoidRootPart") then return end
-    if not FighterController or not FighterController.LocalFighter then return end
-    local item = FighterController.LocalFighter.EquippedItem
-    if not item then return end
-    if tick() - lastFire < getgenv().Config.FireRate then return end
-    lastFire = tick()
+    function __i1j2k3:__find()
+        local myChar = __k7l8m9.Character
+        if not myChar then return nil end
+        local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+        if not myRoot then return nil end
 
-    local originPos = desyncCF and desyncCF.Position or targetRoot.Position
-    local randomOffset = Vector3.new(
-        (math.random() - 0.5) * 0.1,
-        (math.random() - 0.5) * 0.1,
-        (math.random() - 0.5) * 0.1
-    )
-    local aimedPos        = targetHead.Position + randomOffset
-    local aimCF           = CFrame.lookAt(originPos, targetHead.Position)
-    local objSpaceHeadOff = targetHead.CFrame:ToObjectSpace(CFrame.new(aimedPos))
-    local cameradata      = {}
-    cameradata[utf8.char(1)] = {
-        [utf8.char(0)] = util:EncodeCFrame(aimCF),
-        [utf8.char(1)] = util:EncodeCFrame(targetHead.CFrame),
-        [utf8.char(2)] = targetHead,
-        [utf8.char(3)] = util:EncodeCFrame(objSpaceHeadOff)
-    }
-    repS.Remotes.Replication.Fighter.UseItem:FireServer(
-        item:Get("ObjectID"),
-        enum:ToEnum("StartShooting"),
-        cameradata,
-        nil
-    )
-end)
+        local closest = nil
+        local closestDist = math.huge
+        local MAX_DISTANCE = 200
+
+        for _, player in next, __v2w3x4:GetPlayers() do
+            if player == __k7l8m9 then continue end
+            if player:GetAttribute("TeamID") == __k7l8m9:GetAttribute("TeamID") then continue end
+            if self:__isImmune(player) then continue end
+
+            local char = player.Character
+            if not char then continue end
+            local root = char:FindFirstChild("HumanoidRootPart")
+            local head = char:FindFirstChild("Head")
+            local hum  = char:FindFirstChildWhichIsA("Humanoid")
+            if not (root and head and hum and hum.Health > 0) then continue end
+
+            local dist = (myRoot.Position - root.Position).Magnitude
+            if dist > MAX_DISTANCE then continue end
+            if dist < closestDist then
+                closestDist = dist
+                closest = player
+            end
+        end
+
+        return closest
+    end
+
+    function __i1j2k3:Shutdown()
+        self.__active = false
+        if self.__conn1 then self.__conn1:Disconnect() end
+        if self.__conn2 then self.__conn2:Disconnect() end
+        if self.__statusConn then self.__statusConn:Disconnect() end
+        if self.__oldfunc then
+            __t6u7v8.StartShooting = self.__oldfunc
+        end
+        pcall(function()
+            __y5z6a7:UnbindFromRenderStep("__restore")
+        end)
+        pcall(function() statusLabel:Remove() end)
+        pcall(function() ammoLabel:Remove() end)
+    end
+
+    __i1j2k3:__init()
+end
